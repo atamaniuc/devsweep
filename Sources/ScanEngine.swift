@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct ShellResult: Sendable {
     let status: Int32
@@ -18,29 +19,86 @@ enum Shell {
     /// Runs a fixed command through the user's login shell so that PATH entries
     /// from .zprofile/.zshrc (fnm, /usr/local/bin, ~/.local/bin) are visible to
     /// a GUI app, which otherwise only sees /usr/bin:/bin:/usr/sbin:/sbin.
-    static func login(_ command: String) -> ShellResult {
-        run("/bin/zsh", ["-lc", command])
+    static func login(_ command: String, timeout: TimeInterval = 0) -> ShellResult {
+        run("/bin/zsh", ["-lc", command], timeout: timeout)
     }
 
-    static func run(_ executable: String, _ arguments: [String]) -> ShellResult {
+    /// Runs a process and optionally kills it after `timeout` seconds. Output
+    /// is drained through readability handlers so a killed shell cannot block
+    /// the caller on a pipe its children still hold.
+    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 0) -> ShellResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+
         let stdout = Pipe()
         let stderr = Pipe()
         process.standardOutput = stdout
         process.standardError = stderr
+
+        let lock = NSLock()
+        var outData = Data()
+        var errData = Data()
+        let outHandle = stdout.fileHandleForReading
+        let errHandle = stderr.fileHandleForReading
+
+        outHandle.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            lock.lock()
+            outData.append(chunk)
+            lock.unlock()
+        }
+        errHandle.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            lock.lock()
+            errData.append(chunk)
+            lock.unlock()
+        }
+
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in finished.signal() }
+
         do {
             try process.run()
         } catch {
+            outHandle.readabilityHandler = nil
+            errHandle.readabilityHandler = nil
             return ShellResult(status: -1, stdout: "", stderr: error.localizedDescription)
         }
-        process.waitUntilExit()
-        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-        let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-        return ShellResult(status: process.terminationStatus,
-                           stdout: String(data: outData, encoding: .utf8) ?? "",
-                           stderr: String(data: errData, encoding: .utf8) ?? "")
+
+        var timedOut = false
+        if timeout > 0 {
+            if finished.wait(timeout: .now() + timeout) == .timedOut {
+                timedOut = true
+                process.terminate()
+                if finished.wait(timeout: .now() + 3) == .timedOut {
+                    kill(process.processIdentifier, SIGKILL)
+                    _ = finished.wait(timeout: .now() + 3)
+                }
+            }
+        } else {
+            finished.wait()
+        }
+
+        // Give readability handlers a moment to deliver the tail.
+        usleep(30_000)
+        outHandle.readabilityHandler = nil
+        errHandle.readabilityHandler = nil
+        lock.lock()
+        let stdoutText = String(data: outData, encoding: .utf8) ?? ""
+        let stderrText = String(data: errData, encoding: .utf8) ?? ""
+        lock.unlock()
+
+        let status: Int32 = timedOut ? -2 : (process.isRunning ? -3 : process.terminationStatus)
+        return ShellResult(status: status, stdout: stdoutText, stderr: stderrText)
     }
 }
 

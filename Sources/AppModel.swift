@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
         case idle
         case scanning
         case cleaning
+        case rescanning
     }
 
     @Published var items: [CleanupItem] = []
@@ -94,9 +95,15 @@ final class AppModel: ObservableObject {
         let freeBefore = freeBytes
         appendLog(L("Очистка: \(chosen.count) объектов, \(humanBytes(selectedSize))", "Cleaning: \(chosen.count) items, \(humanBytes(selectedSize))"), level: .info)
 
-        let entries = await Task.detached(priority: .userInitiated) { Cleaner.perform(chosen) }.value
-        log.append(contentsOf: entries)
+        let entries = await Task.detached(priority: .userInitiated) { [weak self] in
+            Cleaner.perform(chosen) { entry in
+                Task { @MainActor [weak self] in
+                    self?.appendLive(entry)
+                }
+            }
+        }.value
 
+        phase = .rescanning
         let result = await Task.detached(priority: .userInitiated) { ScanEngine.run() }.value
         items = result.items
         notes = result.notes
@@ -106,8 +113,9 @@ final class AppModel: ObservableObject {
 
         let freed = max(0, freeBytes - freeBefore)
         let removed = entries.filter { if case .success = $0.level { return true } else { return false } }.count
+        let skipped = entries.filter { if case .warning = $0.level { return true } else { return false } }.count
         let failed = entries.filter { if case .error = $0.level { return true } else { return false } }.count
-        lastReport = CleanReport(freedBytes: freed, removed: removed, failed: failed)
+        lastReport = CleanReport(freedBytes: freed, removed: removed, skipped: skipped, failed: failed)
         appendLog(L("Освобождено \(humanBytes(freed)), ошибок: \(failed)", "Freed \(humanBytes(freed)), errors: \(failed)"), level: failed == 0 ? .success : .error)
         writeLogFile()
     }
@@ -122,6 +130,10 @@ final class AppModel: ObservableObject {
         for index in items.indices {
             items[index].selected = false
         }
+    }
+
+    private func appendLive(_ entry: CleanupLogEntry) {
+        log.append(entry)
     }
 
     // MARK: - Dry run

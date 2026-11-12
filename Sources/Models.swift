@@ -141,7 +141,18 @@ struct CleanReport: Identifiable {
     let id = UUID()
     let freedBytes: Int64
     let removed: Int
+    let skipped: Int
     let failed: Int
+}
+
+enum AppVersion {
+    static var current: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
+    static var build: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+    }
+    static let releasesURL = URL(string: "https://github.com/atamaniuc/clean-disk-app/releases/latest")!
 }
 
 // Helpers shared by the UI and the log.

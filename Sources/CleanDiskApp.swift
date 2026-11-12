@@ -6,6 +6,9 @@ struct CleanDiskApp: App {
         if CommandLine.arguments.contains("--self-test") {
             SelfTest.runAndExit()
         }
+        if CommandLine.arguments.contains("--bench-delete") {
+            SelfTest.runDeleteBench()
+        }
         if CommandLine.arguments.contains("--scan") {
             SelfTest.runScan()
         }

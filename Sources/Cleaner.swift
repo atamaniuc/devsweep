@@ -3,6 +3,7 @@ import Foundation
 enum LogLevel: Sendable {
     case info
     case success
+    case warning
     case error
 }
 
@@ -90,14 +91,25 @@ enum Cleaner {
         return false
     }
 
-    static func perform(_ items: [CleanupItem]) -> [CleanupLogEntry] {
+    static func perform(_ items: [CleanupItem], onEntry: ((CleanupLogEntry) -> Void)? = nil) -> [CleanupLogEntry] {
         var entries: [CleanupLogEntry] = []
+
+        func emit(_ entry: CleanupLogEntry) {
+            entries.append(entry)
+            onEntry?(entry)
+        }
+
         for item in items {
             switch item.action {
             case .remove(let url):
-                entries.append(contentsOf: remove(url))
+                emit(CleanupLogEntry(L("Удаляю: \(url.path) (\(humanBytes(item.sizeBytes)))",
+                                       "Removing: \(url.path) (\(humanBytes(item.sizeBytes)))"),
+                                     level: .info))
+                for entry in remove(url) { emit(entry) }
             case .command(let id):
-                entries.append(contentsOf: runCommand(id))
+                let command = commandLine(id) ?? id
+                emit(CleanupLogEntry(L("Выполняю: \(command)", "Running: \(command)"), level: .info))
+                for entry in runCommand(id) { emit(entry) }
             }
         }
         return entries
@@ -105,21 +117,31 @@ enum Cleaner {
 
     static func remove(_ url: URL) -> [CleanupLogEntry] {
         guard isAllowed(url) else {
-            return [CleanupLogEntry(L("ОТКАЗ: \(url.path) вне белого списка", "REFUSED: \(url.path) is outside the allowlist"), level: .error)]
+            return [CleanupLogEntry(L("ОТКАЗ: \(url.path) вне белого списка",
+                                       "REFUSED: \(url.path) is outside the allowlist"), level: .error)]
         }
         guard FileManager.default.fileExists(atPath: url.path) else {
-            return [CleanupLogEntry(L("Пропущено (уже нет): \(url.path)", "Skipped (already gone): \(url.path)"), level: .info)]
+            return [CleanupLogEntry(L("Пропущено (уже нет): \(url.path)",
+                                       "Skipped (already gone): \(url.path)"), level: .info)]
         }
+
+        // The C walker is the fast path: FileManager.removeItem spends minutes
+        // on a cache with hundreds of thousands of files.
+        if cd_rmtree(url.path) == 0 {
+            return [CleanupLogEntry(L("Удалено: \(url.path)", "Removed: \(url.path)"), level: .success)]
+        }
+
         do {
             try FileManager.default.removeItem(at: url)
             return [CleanupLogEntry(L("Удалено: \(url.path)", "Removed: \(url.path)"), level: .success)]
         } catch {
-            return [CleanupLogEntry(L("Не удалось удалить \(url.path): \(error.localizedDescription)", "Could not remove \(url.path): \(error.localizedDescription)"),
-                                    level: .error)]
+            return [CleanupLogEntry(L("Не удалось удалить \(url.path): \(error.localizedDescription)",
+                                       "Could not remove \(url.path): \(error.localizedDescription)"), level: .error)]
         }
     }
 
     /// Fixed command per id. Nothing else can be executed: previews and the
+    /// cleaner share this table. Nothing else can be executed: previews and the
     /// cleaner share this table.
     static func commandLine(_ id: String) -> String? {
         switch id {
@@ -140,21 +162,49 @@ enum Cleaner {
         id == "macports-clean"
     }
 
+    /// Every command has a hard deadline: `uv cache clean` used to block for
+    /// 300 s waiting on a lock held by `uv run ...`, which looked like a hang.
+    static func timeout(for id: String) -> TimeInterval {
+        switch id {
+        case "uv-cache-clean": return 25
+        case "pnpm-store-prune": return 120
+        case "npm-cache-clean": return 180
+        case "bun-cache-clean": return 240
+        case "brew-cleanup": return 240
+        case "docker-builder-prune": return 420
+        case "docker-image-prune": return 120
+        case "macports-clean": return 900
+        case "simctl-delete-unavailable": return 180
+        default: return 120
+        }
+    }
+
     private static func runCommand(_ id: String) -> [CleanupLogEntry] {
         guard let command = commandLine(id) else {
-            return [CleanupLogEntry(L("Внутренняя ошибка: неизвестная команда \(id)", "Internal error: unknown command \(id)"), level: .error)]
+            return [CleanupLogEntry(L("Внутренняя ошибка: неизвестная команда \(id)",
+                                       "Internal error: unknown command \(id)"), level: .error)]
         }
 
         var entries: [CleanupLogEntry] = []
-        let result: ShellResult
+        let limit = timeout(for: id)
 
-        if needsAdministrator(id) {
-            entries.append(CleanupLogEntry(L("Команда (нужен пароль администратора): \(command)", "Command (administrator password required): \(command)"), level: .info))
-            let script = "do shell script \"\(command)\" with administrator privileges"
-            result = Shell.run("/usr/bin/osascript", ["-e", script])
-        } else {
-            entries.append(CleanupLogEntry(L("Команда: \(command)", "Command: \(command)"), level: .info))
-            result = Shell.login(command)
+        func execute(_ commandToRun: String) -> ShellResult {
+            if needsAdministrator(id) {
+                let script = "do shell script \"\(commandToRun)\" with administrator privileges"
+                return Shell.run("/usr/bin/osascript", ["-e", script], timeout: limit)
+            }
+            return Shell.login(commandToRun, timeout: limit)
+        }
+
+        // uv takes its own cache lock; fail in 10 s instead of its default 300 s.
+        let actual = id == "uv-cache-clean" ? "UV_LOCK_TIMEOUT=10 uv cache clean" : command
+        var result = execute(actual)
+
+        if result.status != 0, id == "pnpm-store-prune" {
+            entries.append(CleanupLogEntry(L("pnpm store занят, повторяю через 2 с…",
+                                             "pnpm store is busy, retrying in 2 s…"), level: .info))
+            Thread.sleep(forTimeInterval: 2)
+            result = execute(actual)
         }
 
         if result.status == 0 {
@@ -162,18 +212,32 @@ enum Cleaner {
                 entries.append(CleanupLogEntry("  \(line)", level: .info))
             }
             entries.append(CleanupLogEntry(L("Готово: \(command)", "Done: \(command)"), level: .success))
+            return entries
+        }
+
+        if result.status == -2 {
+            entries.append(CleanupLogEntry(L("Команда прервана по таймауту \(Int(limit)) с: \(command)",
+                                             "Command stopped after \(Int(limit)) s timeout: \(command)"),
+                                           level: .error))
+        } else if id == "uv-cache-clean" && (result.output.lowercased().contains("lock") ||
+                                             result.output.lowercased().contains("in-use")) {
+            entries.append(CleanupLogEntry(L("uv-кэш занят другим uv-процессом (например `uv run ...`) — пропущено, повторите позже",
+                                             "uv cache is locked by another uv process (e.g. `uv run ...`) — skipped, retry later"),
+                                           level: .warning))
         } else {
-            entries.append(CleanupLogEntry(L("Команда не выполнена (код \(result.status)): \(command)", "Command failed (code \(result.status)): \(command)"),
+            entries.append(CleanupLogEntry(L("Команда не выполнена (код \(result.status)): \(command)",
+                                             "Command failed (code \(result.status)): \(command)"),
                                            level: .error))
             for line in tailLines(result.output, count: 3) {
                 entries.append(CleanupLogEntry("  \(line)", level: .info))
             }
-            if id == "npm-cache-clean" {
-                entries.append(contentsOf: remove(home.appendingPathComponent(".npm/_cacache")))
-            }
-            if id == "bun-cache-clean" {
-                entries.append(contentsOf: remove(home.appendingPathComponent(".bun/install/cache")))
-            }
+        }
+
+        if id == "npm-cache-clean" {
+            entries.append(contentsOf: remove(home.appendingPathComponent(".npm/_cacache")))
+        }
+        if id == "bun-cache-clean" {
+            entries.append(contentsOf: remove(home.appendingPathComponent(".bun/install/cache")))
         }
         return entries
     }

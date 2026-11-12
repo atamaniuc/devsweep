@@ -103,10 +103,10 @@ enum SelfTest {
         if let jetbrains = preview.targets.first(where: { $0.category == "IntelliJ IDEA" }) {
             expect(jetbrains.fileCount > 0, "preview lists IntelliJ cache files")
         }
-        if let npm = preview.targets.first(where: { $0.category == "npm" }) {
+        if let npm = preview.targets.first(where: { $0.category == "npm" }), npm.sizeBytes > 0 {
             expect(npm.fileCount > 0, "preview lists npm cache files")
         }
-        if let bun = preview.targets.first(where: { $0.category == "bun" }) {
+        if let bun = preview.targets.first(where: { $0.category == "bun" }), bun.sizeBytes > 0 {
             expect(bun.fileCount > 0, "preview lists bun cache files")
         }
 
@@ -130,6 +130,60 @@ enum SelfTest {
 
         print(failures == 0 ? "SELF-TEST PASSED" : "SELF-TEST FAILED (\(failures) checks)")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    /// Deletion benchmark on freshly created fake cache trees under
+    /// /private/tmp (never touches real caches).
+    static func runDeleteBench() -> Never {
+        let base = "/private/tmp/tmp-cdbench-\(getpid())"
+        let dirs = 200
+        let filesPerDir = 100
+
+        let manager = FileManager.default
+
+        func makeTree(_ root: String) {
+            for d in 0..<dirs {
+                let dir = root + "/d\(d)/sub"
+                try? manager.createDirectory(atPath: dir, withIntermediateDirectories: true)
+                for f in 0..<filesPerDir {
+                    manager.createFile(atPath: dir + "/f\(f).dat", contents: Data(repeating: 7, count: 64))
+                }
+            }
+        }
+
+        func measure(_ label: String, _ block: () -> Bool) {
+            let started = Date()
+            let ok = block()
+            let elapsed = Date().timeIntervalSince(started) * 1000
+            print(String(format: "  %@ %8.1f ms  ok=%@", label as NSString, elapsed, (ok ? "true" : "false") as NSString))
+        }
+
+        print("delete benchmark: \(dirs * filesPerDir) files/tree, 3 trees in \(base)")
+
+        let fmTree = base + "/fm"
+        makeTree(fmTree)
+        measure("FileManager.removeItem") { (try? manager.removeItem(atPath: fmTree)) != nil }
+
+        let rmTree = base + "/rm"
+        makeTree(rmTree)
+        measure("/bin/rm -rf (system C)") { Shell.run("/bin/rm", ["-rf", rmTree]).status == 0 }
+
+        let cTree = base + "/c"
+        makeTree(cTree)
+        measure("cd_rmtree (C, embedded)") { cd_rmtree(cTree) == 0 }
+
+        // The app path: same helper, guarded by the allowlist.
+        let appTree = "/private/tmp/tmp-cdbench-app-\(getpid())"
+        makeTree(appTree)
+        measure("Cleaner.remove (app path)") {
+            _ = Cleaner.perform([CleanupItem(category: .tmp, title: "bench", detail: appTree,
+                                             sizeBytes: 0, action: .remove(URL(fileURLWithPath: appTree)))])
+            return !manager.fileExists(atPath: appTree)
+        }
+
+        let leftovers = [fmTree, rmTree, cTree, appTree].filter { manager.fileExists(atPath: $0) }
+        print(leftovers.isEmpty ? "DELETE BENCH PASSED" : "DELETE BENCH FAILED: \(leftovers)")
+        exit(leftovers.isEmpty ? 0 : 1)
     }
 
     /// Headless scan only (no preview walk); used to time scanning.

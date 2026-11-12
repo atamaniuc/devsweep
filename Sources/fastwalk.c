@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 static long walk(const char *path, FILE *out, long long *total, long limit) {
@@ -56,4 +57,42 @@ long cd_scan(const char *root, const char *output_path, long long *total_bytes, 
     fclose(out);
     if (total_bytes) *total_bytes = total;
     return count;
+}
+
+// Recursive delete: unlink files, rmdir directories, never follow symlinks.
+static int rmtree_inner(const char *path) {
+    struct stat st;
+    if (lstat(path, &st) != 0) return -1;
+    if (!S_ISDIR(st.st_mode)) return unlink(path);
+
+    DIR *dir = opendir(path);
+    if (!dir) return -1;
+
+    struct dirent *entry;
+    int rc = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+
+        size_t need = strlen(path) + strlen(entry->d_name) + 2;
+        char *child = malloc(need);
+        if (!child) { rc = -1; continue; }
+        snprintf(child, need, "%s/%s", path, entry->d_name);
+
+        struct stat cst;
+        if (lstat(child, &cst) == 0) {
+            if (S_ISDIR(cst.st_mode)) {
+                if (rmtree_inner(child) != 0) rc = -1;
+            } else {
+                if (unlink(child) != 0) rc = -1;
+            }
+        }
+        free(child);
+    }
+    closedir(dir);
+    if (rmdir(path) != 0) rc = -1;
+    return rc;
+}
+
+int cd_rmtree(const char *path) {
+    return rmtree_inner(path);
 }

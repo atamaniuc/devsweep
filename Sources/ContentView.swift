@@ -26,7 +26,7 @@ struct ContentView: View {
         .alert(item: $model.lastReport) { report in
             Alert(
                 title: Text(report.failed == 0 ? L("Готово", "Done") : L("Готово с ошибками", "Done with errors")),
-                message: Text(L("Освобождено \(humanBytes(report.freedBytes)).\nУдалено объектов: \(report.removed), ошибок: \(report.failed).", "Freed \(humanBytes(report.freedBytes)).\nRemoved: \(report.removed), errors: \(report.failed).")),
+                message: Text(L("Освобождено \(humanBytes(report.freedBytes)).\nУдалено объектов: \(report.removed), пропущено: \(report.skipped), ошибок: \(report.failed).", "Freed \(humanBytes(report.freedBytes)).\nRemoved: \(report.removed), skipped: \(report.skipped), errors: \(report.failed).")),
                 dismissButton: .default(Text("OK"))
             )
         }
@@ -39,9 +39,17 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Clean Disk")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
-                Text(L("безопасная очистка кэшей macOS", "safe macOS cache cleanup"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Text(L("безопасная очистка кэшей macOS", "safe macOS cache cleanup"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text("v\(AppVersion.current)")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12)))
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
@@ -159,10 +167,19 @@ struct ContentView: View {
         }
     }
 
+    private var phaseLabel: String {
+        switch model.phase {
+        case .scanning: return L("Сканирую кэши…", "Scanning caches…")
+        case .cleaning: return L("Удаляю выбранное…", "Deleting selection…")
+        case .rescanning: return L("Обновляю список…", "Refreshing the list…")
+        case .idle: return ""
+        }
+    }
+
     private var statusBanner: some View {
         HStack(spacing: 10) {
             ProgressView().controlSize(.small)
-            Text(model.phase == .scanning ? L("Сканирую кэши…", "Scanning caches…") : L("Удаляю выбранное…", "Deleting selection…"))
+            Text(phaseLabel)
                 .font(.callout)
             Spacer()
         }
@@ -253,6 +270,7 @@ struct ContentView: View {
         switch level {
         case .info: return .secondary
         case .success: return .green
+        case .warning: return .orange
         case .error: return .red
         }
     }
@@ -260,8 +278,18 @@ struct ContentView: View {
     private var footer: some View {
         HStack(spacing: 6) {
             Image(systemName: "lock.shield")
-            Text(L("Удаляются только кэши из белого списка. Репозитории, контейнеры, образы, тома, настройки и личные файлы не трогаются.", "Only allowlisted caches are deleted. Repositories, containers, images, volumes, settings and personal files are never touched."))
+            Text(L("Удаляются только кэши из белого списка. Репозитории, контейнеры, образы, тома, настройки и личные файлы не трогаются.",
+                   "Only allowlisted caches are deleted. Repositories, containers, images, volumes, settings and personal files are never touched."))
                 .lineLimit(2)
+            Spacer(minLength: 12)
+            Button {
+                NSWorkspace.shared.open(AppVersion.releasesURL)
+            } label: {
+                Text("v\(AppVersion.current) · GitHub")
+                    .font(.system(size: 10, design: .monospaced))
+                    .fixedSize()
+            }
+            .buttonStyle(.link)
         }
         .font(.system(size: 11))
         .foregroundStyle(.secondary)

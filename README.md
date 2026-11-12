@@ -1,10 +1,17 @@
-# Clean Disk
+# Clean Disk 1.1.0
 
 ![Clean Disk window](docs/screenshot.png)
 
 A small macOS desktop app (SwiftUI) that frees disk space by deleting only
 regenerable caches. **Dry run is the default**: it lists the exact files and
 commands before anything is deleted.
+
+## Download
+
+Grab `CleanDisk-1.1.0.zip` from the [latest release](https://github.com/atamaniuc/clean-disk-app/releases/latest),
+unzip it and open `CleanDisk.app`. The bundle is ad-hoc signed, so on first
+launch macOS may ask to confirm with right-click → Open. Release notes live in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## What it cleans
 
