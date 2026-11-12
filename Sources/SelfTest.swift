@@ -97,7 +97,9 @@ enum SelfTest {
         }
         expect(preview.targetCount == selected.count, "preview covers every selected item")
         expect(preview.totalBytes >= 0, "preview has a size")
-        expect(preview.textReport.contains("Ничего не удалено"), "preview text says nothing was deleted")
+        expect(preview.textReport.contains("Ничего не удалено") ||
+               preview.textReport.contains("Nothing was deleted"),
+               "preview text says nothing was deleted")
         if let jetbrains = preview.targets.first(where: { $0.category == "IntelliJ IDEA" }) {
             expect(jetbrains.fileCount > 0, "preview lists IntelliJ cache files")
         }

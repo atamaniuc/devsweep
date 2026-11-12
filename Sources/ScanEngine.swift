@@ -83,7 +83,8 @@ enum Disk {
     /// PreviewBuilder where the file list itself is needed.
     static func sizeOnDisk(_ url: URL) -> Int64 {
         let result = Shell.run("/usr/bin/du", ["-sk", url.path])
-        guard result.status == 0 else { return 0 }
+        // du exits non-zero when part of a root-owned tree is unreadable but
+        // still prints the size of what it could read, so parse regardless.
         let first = result.stdout.split(separator: "\t").first
             ?? result.stdout.split(separator: " ").first
             ?? ""

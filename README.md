@@ -1,5 +1,7 @@
 # Clean Disk
 
+![Clean Disk window](docs/screenshot.png)
+
 A small macOS desktop app (SwiftUI) that frees disk space by deleting only
 regenerable caches. **Dry run is the default**: it lists the exact files and
 commands before anything is deleted.

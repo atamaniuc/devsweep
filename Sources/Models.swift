@@ -161,5 +161,5 @@ func humanBytes(_ bytes: Int64) -> String {
 }
 
 func humanPercent(_ fraction: Double) -> String {
-    String(format: "%.0f%%", fraction)
+    String(format: "%.0f%%", fraction * 100)
 }
