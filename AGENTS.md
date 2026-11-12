@@ -27,9 +27,11 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
 
 ## Rules that bite
 
-- **The catalog is the product.** A new cache is one `make(...)` entry in
-  `ToolCaches.specs` (`Sources/Models.swift`); it automatically drives scanning,
-  the allowlist, the preview and the UI. Never hand-edit the README table:
+- **The catalog is the product** (99 caches in 7 disciplines as of 1.4.0: web,
+  mobile, desktop, embedded, cloud, Web3, data/ML). A new cache is one
+  `make(...)` entry in `ToolCaches.specs` (`Sources/Models.swift`); it
+  automatically drives scanning, the allowlist, the preview, the UI grouping and
+  the generated README table. Never hand-edit the README table:
   `./scripts/update-readme-tools.sh` regenerates it from the binary and
   `--self-test` fails when they differ.
 - **Every toolchain path must be regenerable.** If deleting it makes the user
@@ -43,6 +45,10 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
   walker within noise.
 - **Release artifacts must be universal** (Intel + Apple silicon); `build.sh`
   already enforces both slices.
+- **A scan must reset the list to the top.** An `NSScrollView` whose content
+  grows from empty keeps the old bottom anchor, so a fresh result used to open
+  mid-list; `ContentView` scrolls to `listTopID` after the phase returns to
+  `.idle` (deferred, the rows are not laid out yet in the same runloop turn).
 - **Screenshots: window-only.** Capture the app window by CGWindowID
   (`screencapture -x -l <id>`), never a full-screen capture — the background can
   contain private windows. Verify the image before committing it to `docs/`.
