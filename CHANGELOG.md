@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.4.0 — 2026-11-13
+
+Two new disciplines, and the release pipeline now publishes itself.
+
+### Added — Cloud & infrastructure and Web3 & blockchain groups
+
+- The catalog grows to **99 toolchain caches** with two new groups in the UI and
+  in the generated table:
+  - **Cloud & infrastructure (13)**: AWS CLI credential and SSO token caches,
+    gcloud logs, Azure CLI logs, Pulumi provider plugins and logs, Supabase
+    downloaded artifacts/binaries/CLI traces, Cloudflare Wrangler cache,
+    Terraform plugin cache, Helm chart cache, kubectl discovery cache.
+  - **Web3 & blockchain (7)**: Foundry forge cache, Solana build cache,
+    Hardhat compilers cache, and the solc toolchains svm, solc-select,
+    py-solc-x plus Anchor's AVM versions (advanced: re-downloaded on the next
+    build).
+- Helm, kubectl and Terraform moved from "Data, ML & cloud" into the new Cloud
+  group; "Data, ML & cloud" is now "Data & ML".
+- Every new path was checked before shipping: the Supabase layout is taken from
+  the CLI's own state-layout doc (`artifacts/`, `bin/`, `traces/` under
+  `SUPABASE_HOME`), the Wrangler cache from `workers-sdk`'s config-cache
+  implementation (`<config>/cache`), and the Hardhat cache from its
+  `env-paths("hardhat")` call (`~/Library/Caches/hardhat-nodejs`).
+
+### Added — releases happen on push
+
+- `.github/workflows/release.yml` now runs on `macos-latest` (the `macos-13`,
+  `macos-14` and `macos-15` labels are refused for this repository with
+  "configuration ... is not supported"). Pushing a `v*` tag builds, self-tests,
+  zips and publishes the release; re-runs update it in place.
+- Verified end to end with 1.3.0: the artifact published by the workflow is a
+  universal `x86_64 arm64` bundle (checked with `lipo` after downloading the
+  release asset).
+- `build.sh` fails when either slice is missing, so a tag can never publish a
+  single-architecture bundle.
+
 ## 1.3.0 — 2026-11-13
 
 DevSweep: real product identity and a catalog broad enough to deserve the

@@ -94,6 +94,8 @@ enum ToolPlatform: String, CaseIterable, Identifiable, Sendable {
     case mobile
     case desktop
     case embedded
+    case cloud
+    case web3
     case other
 
     var id: String { rawValue }
@@ -104,7 +106,9 @@ enum ToolPlatform: String, CaseIterable, Identifiable, Sendable {
         case .mobile: return L("Мобильная разработка", "Mobile")
         case .desktop: return L("Desktop и нативные языки", "Desktop & native")
         case .embedded: return L("Embedded", "Embedded")
-        case .other: return L("Данные, ML и облако", "Data, ML & cloud")
+        case .cloud: return L("Облако и инфраструктура", "Cloud & infrastructure")
+        case .web3: return L("Web3 и блокчейн", "Web3 & blockchain")
+        case .other: return L("Данные и ML", "Data & ML")
         }
     }
 
@@ -114,6 +118,8 @@ enum ToolPlatform: String, CaseIterable, Identifiable, Sendable {
         case .mobile: return "iphone"
         case .desktop: return "desktopcomputer"
         case .embedded: return "cpu"
+        case .cloud: return "cloud"
+        case .web3: return "bitcoinsign.circle"
         case .other: return "brain.head.profile"
         }
     }
@@ -126,7 +132,22 @@ enum ToolPlatform: String, CaseIterable, Identifiable, Sendable {
         case .mobile: return "Mobile"
         case .desktop: return "Desktop & native"
         case .embedded: return "Embedded"
-        case .other: return "Data, ML & cloud"
+        case .cloud: return "Cloud & infrastructure"
+        case .web3: return "Web3 & blockchain"
+        case .other: return "Data & ML"
+        }
+    }
+
+    /// Short label for the discipline chips in the header.
+    var chipTitle: String {
+        switch self {
+        case .web: return L("Web", "Web")
+        case .mobile: return L("Mobile", "Mobile")
+        case .desktop: return L("Desktop", "Desktop")
+        case .embedded: return L("Embedded", "Embedded")
+        case .cloud: return L("Cloud", "Cloud")
+        case .web3: return "Web3"
+        case .other: return L("Данные", "Data/ML")
         }
     }
 }
@@ -375,10 +396,40 @@ enum ToolCaches {
         make(".ivy2/cache", "Scala/Java: ivy cache", "Scala/Java: ivy cache", .other),
         make(".m2/repository", "Maven: локальный репозиторий", "Maven: local repository", .other,
              advanced: true, warning: ("Артефакты скачаются заново", "Artifacts will be re-downloaded")),
-        make("Library/Caches/helm/repository", "Helm: кэш чартов", "Helm: chart cache", .other),
-        make(".kube/cache", "kubectl: кэш discovery", "kubectl: discovery cache", .other),
-        make(".terraform.d/plugin-cache", "Terraform: plugin cache", "Terraform: plugin cache", .other),
         make(".cache/nix", "Nix: кэш", "Nix: cache", .other),
+
+        // MARK: Cloud & infrastructure
+
+        make(".aws/cli/cache", "AWS CLI: кэш учётных данных", "AWS CLI: credential cache", .cloud),
+        make(".aws/sso/cache", "AWS CLI: кэш SSO-токенов", "AWS CLI: SSO token cache", .cloud,
+             advanced: true, warning: ("Потребуется `aws sso login` заново", "`aws sso login` is required again")),
+        make(".config/gcloud/logs", "GCP: логи gcloud", "GCP: gcloud logs", .cloud),
+        make(".azure/logs", "Azure CLI: логи", "Azure CLI: logs", .cloud),
+        make(".pulumi/plugins", "Pulumi: плагины провайдеров", "Pulumi: provider plugins", .cloud,
+             advanced: true, warning: ("Плагины скачаются при следующем `pulumi up`", "Plugins download on the next `pulumi up`")),
+        make(".pulumi/logs", "Pulumi: логи", "Pulumi: logs", .cloud),
+        make(".supabase/artifacts", "Supabase: скачанные артефакты", "Supabase: downloaded artifacts", .cloud),
+        make(".supabase/bin", "Supabase: скачанные бинарники", "Supabase: downloaded binaries", .cloud,
+             advanced: true, warning: ("Бинарники скачаются при следующем `supabase start`", "Binaries download on the next `supabase start`")),
+        make(".supabase/traces", "Supabase: трейсы CLI", "Supabase: CLI traces", .cloud),
+        make(".wrangler/cache", "Cloudflare Wrangler: кэш", "Cloudflare Wrangler: cache", .cloud),
+        make(".terraform.d/plugin-cache", "Terraform: plugin cache", "Terraform: plugin cache", .cloud),
+        make("Library/Caches/helm/repository", "Helm: кэш чартов", "Helm: chart cache", .cloud),
+        make(".kube/cache", "kubectl: кэш discovery", "kubectl: discovery cache", .cloud),
+
+        // MARK: Web3 & blockchain
+
+        make(".foundry/cache", "Foundry: кэш forge", "Foundry: forge cache", .web3),
+        make(".svm", "Solidity: версии solc (svm)", "Solidity: solc versions (svm)", .web3,
+             advanced: true, warning: ("solc скачается при следующей сборке", "solc downloads on the next build")),
+        make(".cache/solana", "Solana: кэш сборки", "Solana: build cache", .web3),
+        make(".avm", "Anchor: версии AVM", "Anchor: AVM versions", .web3,
+             advanced: true, warning: ("Anchor переустановит тулчейн при следующей сборке", "Anchor reinstalls the toolchain on the next build")),
+        make(".solc-select", "solc-select: версии компилятора", "solc-select: compiler versions", .web3,
+             advanced: true, warning: ("Компиляторы скачаются заново", "Compilers will be re-downloaded")),
+        make(".solcx", "py-solc-x: версии компилятора", "py-solc-x: compiler versions", .web3,
+             advanced: true, warning: ("Компиляторы скачаются заново", "Compilers will be re-downloaded")),
+        make("Library/Caches/hardhat-nodejs", "Hardhat: кэш компиляторов", "Hardhat: compilers cache", .web3),
     ]
 
     /// How many distinct toolchain caches the app knows about (shown in the UI

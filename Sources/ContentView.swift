@@ -42,18 +42,22 @@ struct ContentView: View {
                 Text(L(AppVersion.taglineRu, AppVersion.taglineEn))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.75))
-                HStack(spacing: 8) {
-                    Text(L("кэш-клинер для разработчиков и инженеров",
-                           "the cache cleaner for developers and engineers"))
-                        .font(.callout)
+                Text(L("кэш-клинер для разработчиков и инженеров",
+                       "the cache cleaner for developers and engineers"))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    Text(L("\(ToolCaches.count) кэшей:", "\(ToolCaches.count) caches:"))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
-                    Text(L("\(ToolCaches.count) кэшей тулчейнов · macOS 13+",
-                           "\(ToolCaches.count) toolchain caches · macOS 13+"))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12)))
+                    ForEach(ToolPlatform.allCases) { platform in
+                        Text("\(platform.chipTitle) \(ToolCaches.specs(for: platform).count)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12)))
+                    }
                     Text("v\(AppVersion.current)")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.tertiary)
@@ -147,30 +151,45 @@ struct ContentView: View {
     // MARK: - Item list
 
     private var content: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
-                if model.phase != .idle {
-                    statusBanner
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    Color.clear.frame(height: 0).id(Self.listTopID)
+                    if model.phase != .idle {
+                        statusBanner
+                    }
+                    if !model.notes.isEmpty {
+                        notesView
+                    }
+                    if !model.safeItems.isEmpty {
+                        sectionHeader(L("Безопасно удалить", "Safe to delete"), L("это кэши: приложение или пакетный менеджер восстановит их сам", "these are caches: the app or package manager recreates them"))
+                        groupedRows(model.safeItems)
+                    }
+                    if model.showAdvanced && !model.advancedItems.isEmpty {
+                        sectionHeader(L("Расширенные", "Advanced"), L("прочитайте предупреждения: это данные, которые восстанавливаются не всегда", "read the warnings: this data is not always recreated"))
+                        groupedRows(model.advancedItems)
+                    }
+                    if model.phase == .idle && model.items.isEmpty {
+                        emptyState
+                    }
                 }
-                if !model.notes.isEmpty {
-                    notesView
-                }
-                if !model.safeItems.isEmpty {
-                    sectionHeader(L("Безопасно удалить", "Safe to delete"), L("это кэши: приложение или пакетный менеджер восстановит их сам", "these are caches: the app or package manager recreates them"))
-                    groupedRows(model.safeItems)
-                }
-                if model.showAdvanced && !model.advancedItems.isEmpty {
-                    sectionHeader(L("Расширенные", "Advanced"), L("прочитайте предупреждения: это данные, которые восстанавливаются не всегда", "read the warnings: this data is not always recreated"))
-                    groupedRows(model.advancedItems)
-                }
-                if model.phase == .idle && model.items.isEmpty {
-                    emptyState
+                .padding(20)
+            }
+            // Rows arrive asynchronously after the scan. An NSScrollView whose
+            // content grows from empty keeps the old "bottom" anchor, which
+            // makes a fresh result open somewhere in the middle: scroll back to
+            // the top once the new rows are laid out.
+            .onChange(of: model.phase) { phase in
+                guard phase == .idle else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    proxy.scrollTo(Self.listTopID, anchor: .top)
                 }
             }
-            .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    private static let listTopID = "list-top"
 
     private func itemRows(_ items: [CleanupItem]) -> some View {
         ForEach(items) { item in

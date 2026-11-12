@@ -21,6 +21,9 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
   `v<version>`. `.github/workflows/release.yml` builds, tests, zips
   `DevSweep-<version>.zip` and creates/updates the GitHub release; it fails when
   the version has no changelog section.
+- CI runs on `macos-latest` on purpose: `macos-13`, `macos-14` and `macos-15`
+  are refused for this repository ("configuration ... is not supported") while
+  `macos-latest` schedules fine (Apple silicon, cross-builds the Intel slice).
 
 ## Rules that bite
 

@@ -8,8 +8,8 @@ DevSweep is a native macOS desktop app **for developers and engineers**, not a
 generic "clean your Mac" utility. Those know Downloads and Trash. DevSweep knows
 the regenerable caches that Rust, Gradle, Xcode, PlatformIO, Conda, Hugging Face
 and dozens of other tools leave behind, groups them by discipline (web, mobile, desktop,
-embedded, data/ML) and deletes only what the tool itself rebuilds or
-re-downloads. **Dry run is the default**: you see the exact file list and the
+embedded, cloud, Web3, data/ML) and deletes only what the tool itself rebuilds
+or re-downloads. **Dry run is the default**: you see the exact file list and the
 exact command before anything is removed.
 
 macOS 13+ · universal binary (Apple silicon + Intel) · ~2 MB · no Electron, no
@@ -17,7 +17,7 @@ telemetry, no network access.
 
 ## Download
 
-Grab `DevSweep-1.3.0.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
+Grab `DevSweep-1.4.0.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
 unzip it and open `DevSweep.app`. The bundle is ad-hoc signed, so on first launch
 macOS may ask you to confirm with right-click → Open. Release notes live in
 [CHANGELOG.md](CHANGELOG.md); the running version is shown in the window and in
@@ -26,14 +26,15 @@ the footer link.
 ## Why it is different from other disk cleaners
 
 - **Built for developers, not for "junk".** A generic cleaner cannot tell a
-  Gradle cache from a project. DevSweep ships a catalog of **82 toolchain
+  Gradle cache from a project. DevSweep ships a catalog of **99 toolchain
   caches** and treats each one with the right tool: `npm cache clean --force`,
   `uv cache clean --force`, `go clean -cache`, `pnpm store prune`, Docker
   `builder prune --filter until=24h`, and plain allowlisted directory removal
   for the rest.
 - **Grouped by discipline.** Every cache is tagged web & backend, mobile,
-  desktop & native, embedded, or data/ML/cloud — so a full-stack developer, a
-  firmware engineer and an ML engineer each see their own list first.
+  desktop & native, embedded, cloud & infrastructure, Web3 & blockchain, or
+  data & ML — so a full-stack developer, a firmware engineer, a cloud/platform
+  engineer and a smart-contract developer each see their own list first.
 - **Safety is the feature.** Deletions pass a hard allowlist (absolute path, no
   `..`, no symlinks, never `node_modules`/`.git`), repositories, containers,
   images and volumes are never touched, and an app's cache is skipped while that
@@ -135,7 +136,37 @@ rebuilt, slower.
 | arduino-cli: cache | `~/.cache/arduino` | safe |
 | TinyGo: build cache | `~/.cache/tinygo` | safe |
 
-### Data, ML & cloud
+### Cloud & infrastructure
+
+| Tool | Cache path | Class |
+| --- | --- | --- |
+| AWS CLI: credential cache | `~/.aws/cli/cache` | safe |
+| AWS CLI: SSO token cache | `~/.aws/sso/cache` | advanced |
+| GCP: gcloud logs | `~/.config/gcloud/logs` | safe |
+| Azure CLI: logs | `~/.azure/logs` | safe |
+| Pulumi: provider plugins | `~/.pulumi/plugins` | advanced |
+| Pulumi: logs | `~/.pulumi/logs` | safe |
+| Supabase: downloaded artifacts | `~/.supabase/artifacts` | safe |
+| Supabase: downloaded binaries | `~/.supabase/bin` | advanced |
+| Supabase: CLI traces | `~/.supabase/traces` | safe |
+| Cloudflare Wrangler: cache | `~/.wrangler/cache` | safe |
+| Terraform: plugin cache | `~/.terraform.d/plugin-cache` | safe |
+| Helm: chart cache | `~/Library/Caches/helm/repository` | safe |
+| kubectl: discovery cache | `~/.kube/cache` | safe |
+
+### Web3 & blockchain
+
+| Tool | Cache path | Class |
+| --- | --- | --- |
+| Foundry: forge cache | `~/.foundry/cache` | safe |
+| Solidity: solc versions (svm) | `~/.svm` | advanced |
+| Solana: build cache | `~/.cache/solana` | safe |
+| Anchor: AVM versions | `~/.avm` | advanced |
+| solc-select: compiler versions | `~/.solc-select` | advanced |
+| py-solc-x: compiler versions | `~/.solcx` | advanced |
+| Hardhat: compilers cache | `~/Library/Caches/hardhat-nodejs` | safe |
+
+### Data & ML
 
 | Tool | Cache path | Class |
 | --- | --- | --- |
@@ -156,9 +187,6 @@ rebuilt, slower.
 | Scala: sbt boot | `~/.sbt/boot` | safe |
 | Scala/Java: ivy cache | `~/.ivy2/cache` | safe |
 | Maven: local repository | `~/.m2/repository` | advanced |
-| Helm: chart cache | `~/Library/Caches/helm/repository` | safe |
-| kubectl: discovery cache | `~/.kube/cache` | safe |
-| Terraform: plugin cache | `~/.terraform.d/plugin-cache` | safe |
 | Nix: cache | `~/.cache/nix` | safe |
 
 <!-- tools:end -->
