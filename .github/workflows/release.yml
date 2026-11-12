@@ -36,8 +36,11 @@ env:
 jobs:
   release:
     name: Build and publish
-    # Apple silicon runner; Xcode (swiftc, clang) is preinstalled.
-    runs-on: macos-14
+    # macos-latest is the only macOS label this repository can schedule
+    # (macos-13/14/15 are refused with "configuration ... is not supported").
+    # It is Apple silicon, and build.sh cross-compiles the Intel slice, so the
+    # published bundle is universal either way.
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
