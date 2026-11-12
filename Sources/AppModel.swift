@@ -34,7 +34,7 @@ final class AppModel: ObservableObject {
         let logsDirectory = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs")
         try? FileManager.default.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
-        logFileURL = logsDirectory.appendingPathComponent("CleanDisk.log")
+        logFileURL = logsDirectory.appendingPathComponent("\(AppVersion.name).log")
     }
 
     var usedFraction: Double {
@@ -162,7 +162,7 @@ final class AppModel: ObservableObject {
     private func writeLogFile() {
         let formatter = ISO8601DateFormatter()
         var lines: [String] = []
-        lines.append("=== CleanDisk \(formatter.string(from: Date())) ===")
+        lines.append("=== \(AppVersion.name) \(AppVersion.current) \(formatter.string(from: Date())) ===")
         lines.append("free=\(humanBytes(freeBytes)) total=\(humanBytes(totalBytes))")
         for item in items {
             lines.append("item=\(item.category.rawValue) selected=\(item.selected) size=\(item.sizeBytes) title=\(item.title)")

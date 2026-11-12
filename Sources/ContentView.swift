@@ -37,12 +37,23 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Clean Disk")
+                Text(AppVersion.name)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
+                Text(L(AppVersion.taglineRu, AppVersion.taglineEn))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.75))
                 HStack(spacing: 8) {
-                    Text(L("безопасная очистка кэшей macOS", "safe macOS cache cleanup"))
+                    Text(L("кэш-клинер для разработчиков и инженеров",
+                           "the cache cleaner for developers and engineers"))
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                    Text(L("\(ToolCaches.count) кэшей тулчейнов · macOS 13+",
+                           "\(ToolCaches.count) toolchain caches · macOS 13+"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12)))
                     Text("v\(AppVersion.current)")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.tertiary)
@@ -146,11 +157,11 @@ struct ContentView: View {
                 }
                 if !model.safeItems.isEmpty {
                     sectionHeader(L("Безопасно удалить", "Safe to delete"), L("это кэши: приложение или пакетный менеджер восстановит их сам", "these are caches: the app or package manager recreates them"))
-                    itemRows(model.safeItems)
+                    groupedRows(model.safeItems)
                 }
                 if model.showAdvanced && !model.advancedItems.isEmpty {
                     sectionHeader(L("Расширенные", "Advanced"), L("прочитайте предупреждения: это данные, которые восстанавливаются не всегда", "read the warnings: this data is not always recreated"))
-                    itemRows(model.advancedItems)
+                    groupedRows(model.advancedItems)
                 }
                 if model.phase == .idle && model.items.isEmpty {
                     emptyState
@@ -165,6 +176,45 @@ struct ContentView: View {
         ForEach(items) { item in
             ItemRow(item: item, selected: model.binding(for: item.id))
         }
+    }
+
+    /// Toolchain rows are grouped by discipline (web, mobile, desktop,
+    /// embedded, data/ML/cloud): that grouping is the product difference from
+    /// a generic "empty the Trash" cleaner.
+    @ViewBuilder
+    private func groupedRows(_ items: [CleanupItem]) -> some View {
+        ForEach(ToolPlatform.allCases) { platform in
+            let group = items.filter { $0.platform == platform }
+            if !group.isEmpty {
+                platformHeader(platform, group)
+                itemRows(group)
+            }
+        }
+        let rest = items.filter { $0.platform == nil }
+        if !rest.isEmpty {
+            if items.contains(where: { $0.platform != nil }) {
+                sectionHeader(L("Система и приложения", "System and apps"),
+                              L("менеджеры пакетов, IDE, Docker, временные файлы",
+                                "package managers, IDEs, Docker, temporary files"))
+            }
+            itemRows(rest)
+        }
+    }
+
+    private func platformHeader(_ platform: ToolPlatform, _ items: [CleanupItem]) -> some View {
+        let size = items.reduce(Int64(0)) { $0 + $1.sizeBytes }
+        return HStack(spacing: 8) {
+            Image(systemName: platform.systemImage)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.accentColor)
+            Text(platform.title)
+                .font(.system(size: 12, weight: .semibold))
+            Text("\(items.count) · \(humanBytes(size))")
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.top, 6)
     }
 
     private var phaseLabel: String {

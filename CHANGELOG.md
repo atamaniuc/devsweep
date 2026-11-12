@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.3.0 — 2026-11-13
+
+DevSweep: real product identity and a catalog broad enough to deserve the
+"for developers and engineers" claim.
+
+### Added — the catalog is the product
+
+- **82 toolchain caches**, up from 45, each tagged with a discipline:
+  **web & backend** (14), **mobile** (13), **desktop & native** (25),
+  **embedded** (9), **data, ML & cloud** (21).
+- New coverage includes Yarn Berry, npm npx cache, node-gyp headers, Firebase
+  CLI, Cypress, Deno, PHP/Ruby/Elixir/Erlang caches, Bazel and
+  Bazelisk, Conan 2, vcpkg, .NET global packages, Electron and electron-builder,
+  Unity, Unreal Engine DerivedDataCache, VS Code Insiders, PlatformIO,
+  ESP-IDF (dist/tools/python env), Arduino staging/cores/arduino-cli, TinyGo,
+  CocoaPods spec repos, fastlane, Xcode Previews, CoreSimulator caches, Whisper,
+  and the Nix cache.
+- The UI groups toolchain rows by discipline with per-group count and size.
+
+### Added — docs cannot drift from code
+
+- `--tools` and `--tools-md` print the catalog (plain text / markdown).
+- `scripts/update-readme-tools.sh` regenerates the README table from the binary.
+- `--self-test` now compares the README table with the compiled catalog, checks
+  that every declared cache passes the deletion allowlist, that no cache path is
+  inside `node_modules`/`.git`, that paths are unique, and that every discipline
+  keeps at least five caches.
+
+### Added — release engineering
+
+- `build.sh` now produces a **universal binary (arm64 + x86_64)**, verifies with
+  `lipo` that both slices are present and fails otherwise; `ARCHS=$(uname -m)`
+  builds just the host slice for fast iteration.
+- `.github/workflows/release.yml`: pushing a `v*` tag builds the universal app
+  on GitHub Actions, runs `--self-test`, zips `DevSweep-<version>.zip`, and
+  creates or updates the release with notes extracted from this file (the run
+  fails if the version has no notes).
+- `LICENSE` (MIT), repository `AGENTS.md`, and README rewritten around the new
+  positioning, including a generated per-discipline table.
+
+### Changed
+
+- The product is now **DevSweep** (bundle `com.atamaniuc.devsweep`, binary
+  `DevSweep`, log `~/Library/Logs/DevSweep.log`, repository `atamaniuc/devsweep`).
+  Headline: *"Reclaim the gigabytes your toolchain quietly hoards."*
+- Puppeteer and Selenium moved from the generic `~/.cache` category into the web
+  toolchain group (same paths, same safety, better grouping).
+
 ## 1.2.0 — 2026-11-13
 
 Built for developers: the app now understands the caches that IDEs, package

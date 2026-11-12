@@ -1,0 +1,251 @@
+name: Release
+
+# Build DevSweep on every v* tag push (or a manually supplied tag) and
+# create/update the matching GitHub release.
+#
+# Idempotent by design: re-running the same tag rewrites the title and notes,
+# then replaces the zip with `gh release upload --clobber`.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish, e.g. v1.3.0"
+        required: true
+        type: string
+
+# Required for gh release create/edit/upload with the built-in GITHUB_TOKEN.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  APP_NAME: DevSweep
+  # For a tag push github.ref_name is the tag; for a manual run it is the branch,
+  # so the dispatched tag input takes precedence there.
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+
+jobs:
+  release:
+    name: Build and publish
+    # Apple silicon runner; Xcode (swiftc, clang) is preinstalled.
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve version and verify it matches Info.plist
+        run: |
+          set -euo pipefail
+
+          TAG="${TAG:-}"
+          if [[ -z "$TAG" ]]; then
+            echo "::error::No tag was supplied (push a v* tag or pass the workflow_dispatch 'tag' input)"
+            exit 1
+          fi
+
+          tag_re='^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
+          if [[ ! "$TAG" =~ $tag_re ]]; then
+            echo "::error::Tag '$TAG' is not of the form v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+
+          if [[ ! -f Info.plist ]]; then
+            echo "::error::Info.plist is missing from the checkout ($PWD)"
+            exit 1
+          fi
+
+          plist_value() {
+            local key="$1"
+            /usr/libexec/PlistBuddy -c "Print :$key" Info.plist 2>/dev/null || {
+              echo "::error::Info.plist is missing the key $key" >&2
+              return 1
+            }
+          }
+
+          PLIST_VERSION="$(plist_value CFBundleShortVersionString)"
+          PLIST_BUILD="$(plist_value CFBundleVersion)"
+
+          if [[ -z "$PLIST_VERSION" ]]; then
+            echo "::error::Info.plist CFBundleShortVersionString is empty"
+            exit 1
+          fi
+          if [[ "$VERSION" != "$PLIST_VERSION" ]]; then
+            echo "::error::Tag '$TAG' resolves to version '$VERSION' but Info.plist CFBundleShortVersionString is '$PLIST_VERSION'. Bump Info.plist (and the changelog) or push the right tag."
+            exit 1
+          fi
+          if [[ ! "$PLIST_BUILD" =~ ^[0-9]+$ ]]; then
+            echo "::error::Info.plist CFBundleVersion '$PLIST_BUILD' is not an integer build number"
+            exit 1
+          fi
+
+          ASSET="artifacts/${APP_NAME}-${VERSION}.zip"
+          NOTES="artifacts/release-notes-${VERSION}.md"
+
+          {
+            printf 'VERSION=%s\n' "$VERSION"
+            printf 'ASSET=%s\n' "$ASSET"
+            printf 'NOTES=%s\n' "$NOTES"
+          } >> "$GITHUB_ENV"
+
+          echo "repo:        ${GITHUB_REPOSITORY:-<unset>}"
+          echo "event:       ${GITHUB_EVENT_NAME:-<unset>}"
+          echo "tag:         $TAG"
+          echo "version:     $VERSION (Info.plist $PLIST_VERSION, build $PLIST_BUILD)"
+          echo "app:         build/${APP_NAME}.app"
+          echo "asset:       $ASSET"
+          echo "notes:       $NOTES"
+          echo "runner arch: $(uname -m)"
+
+      - name: Verify build inputs and toolchain
+        run: |
+          set -euo pipefail
+
+          for path in build.sh Info.plist CHANGELOG.md Sources; do
+            if [[ ! -e "$path" ]]; then
+              echo "::error::Required build input '$path' is missing from the checkout"
+              exit 1
+            fi
+          done
+
+          if ! command -v swiftc >/dev/null 2>&1; then
+            echo "::error::swiftc not found; the macos-14 Xcode toolchain is expected to provide it"
+            exit 1
+          fi
+
+          echo "xcode-select: $(xcode-select -p)"
+          echo "swiftc: $(swiftc --version 2>&1 | head -n 1)"
+
+      - name: Build
+        run: |
+          set -euo pipefail
+
+          chmod +x ./build.sh
+          ./build.sh
+
+          APP="build/${APP_NAME}.app"
+          if [[ ! -x "$APP/Contents/MacOS/${APP_NAME}" ]]; then
+            echo "::error::'./build.sh' did not produce $APP/Contents/MacOS/${APP_NAME}. Check that build.sh builds ${APP_NAME}.app with the ${APP_NAME} executable."
+            exit 1
+          fi
+          echo "built: $(pwd)/$APP"
+
+      - name: Self-test (release gate)
+        run: |
+          set -euo pipefail
+
+          BIN="build/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+          if [[ ! -x "$BIN" ]]; then
+            echo "::error::Self-test binary is missing or not executable: $BIN"
+            exit 1
+          fi
+
+          set +e
+          "$BIN" --self-test
+          code=$?
+          set -e
+
+          if [[ "$code" -ne 0 ]]; then
+            echo "::error::'$BIN --self-test' failed with exit code $code; refusing to release"
+            exit "$code"
+          fi
+          echo "self-test: PASS (exit 0)"
+
+      - name: Package and verify zip
+        run: |
+          set -euo pipefail
+
+          mkdir -p artifacts
+          rm -f "$ASSET"
+          ditto -c -k --keepParent "build/${APP_NAME}.app" "$ASSET"
+
+          if [[ ! -s "$ASSET" ]]; then
+            echo "::error::Zip '$ASSET' is missing or empty"
+            exit 1
+          fi
+
+          unzip -l "$ASSET" > artifacts/zip-listing.txt
+          for entry in "${APP_NAME}.app/" "${APP_NAME}.app/Contents/Info.plist" "${APP_NAME}.app/Contents/MacOS/${APP_NAME}"; do
+            if ! grep -Fq "$entry" artifacts/zip-listing.txt; then
+              echo "::error::Zip '$ASSET' does not contain '$entry'"
+              exit 1
+            fi
+          done
+
+          BYTES="$(stat -f %z "$ASSET")"
+          echo "asset:  $ASSET"
+          echo "size:   $BYTES bytes"
+          echo "bundle: ${APP_NAME}.app/Contents/MacOS/${APP_NAME} present"
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+
+          mkdir -p artifacts
+
+          # Take the "## <version> ..." heading through the line before the next
+          # "## " heading. Exact prefix match (index) keeps 1.3.0 from matching
+          # 1.3.00, and dots are not treated as regex metacharacters.
+          CHANGELOG_SECTION="$(awk -v ver="$VERSION" '
+            BEGIN { heading = "## " ver " " }
+            index($0, heading) == 1 || $0 == "## " ver { inside = 1 }
+            inside {
+              if (seen && index($0, "## ") == 1) { exit }
+              print
+              seen = 1
+            }
+          ' CHANGELOG.md)"
+
+          if [[ -z "$CHANGELOG_SECTION" ]]; then
+            echo "::error::CHANGELOG.md has no '## $VERSION' section; refusing to release without release notes (expected a heading like '## $VERSION — YYYY-MM-DD')"
+            exit 1
+          fi
+
+          BODY="$(printf '%s\n' "$CHANGELOG_SECTION" | tail -n +2)"
+          if [[ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]]; then
+            echo "::error::CHANGELOG.md section '## $VERSION' is empty; refusing to release without release notes"
+            exit 1
+          fi
+
+          printf '%s\n' "$CHANGELOG_SECTION" > "$NOTES"
+          echo "release notes for $VERSION ($(wc -l < "$NOTES" | tr -d ' ') lines):"
+          cat "$NOTES"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          TITLE="${APP_NAME} ${VERSION}"
+          echo "repo:  ${GITHUB_REPOSITORY:-<unset>}"
+          echo "tag:   ${TAG}"
+          echo "title: ${TITLE}"
+          echo "asset: ${ASSET}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release '$TAG' exists: updating title and notes in place"
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES"
+          else
+            echo "release '$TAG' does not exist: creating it"
+            gh release create "$TAG" --title "$TITLE" --notes-file "$NOTES" --verify-tag
+          fi
+
+          echo "uploading '$ASSET' (--clobber makes a re-run safe)"
+          gh release upload "$TAG" "$ASSET" --clobber
+
+          gh release view "$TAG" --json url --jq '.url'

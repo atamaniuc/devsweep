@@ -32,7 +32,8 @@ struct PreviewReport: Identifiable {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         var lines: [String] = []
-        lines.append(L("CleanDisk — dry run: что будет удалено", "CleanDisk — dry run: what will be deleted"))
+        lines.append(L("\(AppVersion.name) \(AppVersion.current) — dry run: что будет удалено",
+                       "\(AppVersion.name) \(AppVersion.current) — dry run: what will be deleted"))
         lines.append(L("Дата: \(formatter.string(from: createdAt))", "Date: \(formatter.string(from: createdAt))"))
         lines.append(L("Ничего не удалено: это только план.", "Nothing was deleted: this is a plan only."))
         lines.append(L("Объектов: \(targetCount), файлов: \(fileCount), размер: \(humanBytes(totalBytes))", "Items: \(targetCount), files: \(fileCount), size: \(humanBytes(totalBytes))"))

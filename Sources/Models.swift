@@ -47,9 +47,9 @@ enum CleanupCategory: String, CaseIterable, Identifiable, Sendable {
         case .docker: return L("build cache старше 24 ч и образы без тегов", "build cache older than 24 h and untagged images")
         case .brew: return L("старые версии и кэш загрузок", "old versions and download cache")
         case .macports: return L("build-каталоги и distfiles (нужен пароль администратора)", "build directories and distfiles (administrator password required)")
-        case .caches: return L("puppeteer, nvim/jdtls, selenium, uv", "puppeteer, nvim/jdtls, selenium, uv")
-        case .devtools: return L("cargo, ccache, pip, composer, yarn, pub, SPM, VS Code…", "cargo, ccache, pip, composer, yarn, pub, SPM, VS Code…")
-        case .devtoolsAdvanced: return L("go modcache, gradle, maven, conda, playwright, DerivedData…", "go modcache, gradle, maven, conda, playwright, DerivedData…")
+        case .caches: return L("uv, nvim/jdtls и другие кэши ~/.cache", "uv, nvim/jdtls and other ~/.cache entries")
+        case .devtools: return L("пакетные менеджеры и тулчейны языков", "package managers and language toolchains")
+        case .devtoolsAdvanced: return L("зависимости и модели: восстановятся, но медленно", "dependencies and models: they come back, but slowly")
         case .telegram: return L("медиа-кэш клиента, сообщения остаются", "client media cache, messages stay")
         case .whatsapp: return L("MediaCache и сетевой кэш", "MediaCache and network cache")
         case .tmp: return L("scratch старше 14 дней в /private/tmp", "scratch older than 14 days in /private/tmp")
@@ -86,6 +86,51 @@ enum CleanupCategory: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// The discipline a toolchain cache belongs to. The README table and the app
+/// list are generated from the same specs, so documentation cannot drift from
+/// what the app actually cleans.
+enum ToolPlatform: String, CaseIterable, Identifiable, Sendable {
+    case web
+    case mobile
+    case desktop
+    case embedded
+    case other
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .web: return L("Web и backend", "Web & backend")
+        case .mobile: return L("Мобильная разработка", "Mobile")
+        case .desktop: return L("Desktop и нативные языки", "Desktop & native")
+        case .embedded: return L("Embedded", "Embedded")
+        case .other: return L("Данные, ML и облако", "Data, ML & cloud")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .web: return "globe"
+        case .mobile: return "iphone"
+        case .desktop: return "desktopcomputer"
+        case .embedded: return "cpu"
+        case .other: return "brain.head.profile"
+        }
+    }
+
+    /// Stable English heading for the generated README section: the docs are
+    /// English whatever the system language is.
+    var englishTitle: String {
+        switch self {
+        case .web: return "Web & backend"
+        case .mobile: return "Mobile"
+        case .desktop: return "Desktop & native"
+        case .embedded: return "Embedded"
+        case .other: return "Data, ML & cloud"
+        }
+    }
+}
+
 enum CleanupAction: Sendable {
     case remove(URL)
     case command(String)
@@ -105,6 +150,8 @@ struct CleanupItem: Identifiable, Sendable {
     let action: CleanupAction
     let warning: String?
     let previewPath: URL?
+    /// Set for toolchain caches: lets the UI group them by discipline.
+    let platform: ToolPlatform?
     var selected: Bool
 
     init(category: CleanupCategory,
@@ -114,6 +161,7 @@ struct CleanupItem: Identifiable, Sendable {
          action: CleanupAction,
          warning: String? = nil,
          previewPath: URL? = nil,
+         platform: ToolPlatform? = nil,
          selected: Bool = true) {
         self.id = UUID()
         self.category = category
@@ -123,6 +171,7 @@ struct CleanupItem: Identifiable, Sendable {
         self.action = action
         self.warning = warning
         self.previewPath = previewPath
+        self.platform = platform
         self.selected = selected
     }
 }
@@ -155,141 +204,204 @@ struct CleanReport: Identifiable {
 }
 
 struct ToolCacheSpec: Sendable {
+    /// Path relative to the home directory, or an absolute path when it starts
+    /// with "/" (e.g. /opt/miniconda3/pkgs).
     let relativePath: String
     let titleRu: String
     let titleEn: String
+    let platform: ToolPlatform
     let advanced: Bool
     let commandID: String?
     let warningRu: String?
     let warningEn: String?
+
+    var url: URL {
+        if relativePath.hasPrefix("/") { return URL(fileURLWithPath: relativePath) }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(relativePath)
+    }
+
+    /// How the path is shown in the UI and the README.
+    var displayPath: String {
+        relativePath.hasPrefix("/") ? relativePath : "~/" + relativePath
+    }
 }
 
 /// Package-manager / toolchain caches. Every path is regenerable: the tool
-/// downloads or rebuilds it again.
+/// downloads or rebuilds it again. The list is deliberately broad because this
+/// is the product: a generic cleaner knows Downloads and Trash, DevSweep knows
+/// what a Rust, Flutter, Unreal or PlatformIO developer leaves behind.
 enum ToolCaches {
+    private static func make(_ relativePath: String,
+                             _ titleRu: String,
+                             _ titleEn: String,
+                             _ platform: ToolPlatform,
+                             advanced: Bool = false,
+                             commandID: String? = nil,
+                             warning: (ru: String, en: String)? = nil) -> ToolCacheSpec {
+        ToolCacheSpec(relativePath: relativePath,
+                      titleRu: titleRu,
+                      titleEn: titleEn,
+                      platform: platform,
+                      advanced: advanced,
+                      commandID: commandID,
+                      warningRu: warning?.ru,
+                      warningEn: warning?.en)
+    }
+
     static let specs: [ToolCacheSpec] = [
-        .init(relativePath: ".cargo/registry/cache", titleRu: "Rust: кэш crates", titleEn: "Rust: crates cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".cargo/registry/src", titleRu: "Rust: распакованные исходники", titleEn: "Rust: extracted crate sources",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".cargo/git", titleRu: "Rust: git-зависимости", titleEn: "Rust: git dependencies",
-              advanced: true, commandID: nil,
-              warningRu: "Git-зависимости склонируются заново", warningEn: "Git dependencies will be re-cloned"),
-        .init(relativePath: ".cache/ccache", titleRu: "C/C++: ccache", titleEn: "C/C++: ccache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".cache/clangd/index", titleRu: "C/C++: индексы clangd", titleEn: "C/C++: clangd indexes",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/go-build", titleRu: "Go: build cache", titleEn: "Go: build cache",
-              advanced: false, commandID: "go-clean-cache", warningRu: nil, warningEn: nil),
-        .init(relativePath: "go/pkg/mod", titleRu: "Go: кэш модулей", titleEn: "Go: module cache",
-              advanced: true, commandID: "go-clean-modcache",
-              warningRu: "Все зависимости перекачаются при следующей сборке",
-              warningEn: "All dependencies will be re-downloaded on the next build"),
-        .init(relativePath: ".gradle/caches", titleRu: "Gradle: кэш зависимостей", titleEn: "Gradle: dependency caches",
-              advanced: true, commandID: nil,
-              warningRu: "Следующая сборка будет дольше", warningEn: "The next build will be slower"),
-        .init(relativePath: ".m2/repository", titleRu: "Maven: локальный репозиторий", titleEn: "Maven: local repository",
-              advanced: true, commandID: nil,
-              warningRu: "Артефакты скачаются заново", warningEn: "Artifacts will be re-downloaded"),
-        .init(relativePath: ".ivy2/cache", titleRu: "Scala/Java: ivy cache", titleEn: "Scala/Java: ivy cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/pip", titleRu: "Python: pip cache", titleEn: "Python: pip cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/pypoetry", titleRu: "Python: Poetry cache", titleEn: "Python: Poetry cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".cache/pre-commit", titleRu: "Python: окружения pre-commit", titleEn: "Python: pre-commit environments",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/composer", titleRu: "PHP: Composer cache", titleEn: "PHP: Composer cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/Yarn", titleRu: "Node: Yarn cache", titleEn: "Node: Yarn cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/deno", titleRu: "Deno cache", titleEn: "Deno cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".pub-cache", titleRu: "Dart/Flutter: pub cache", titleEn: "Dart/Flutter: pub cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/org.swift.swiftpm", titleRu: "Swift: SPM cache", titleEn: "Swift: SPM cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".android/cache", titleRu: "Android: SDK cache", titleEn: "Android: SDK cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/ms-playwright", titleRu: "Playwright: браузеры", titleEn: "Playwright: browsers",
-              advanced: true, commandID: nil,
-              warningRu: "Браузеры скачаются заново", warningEn: "Browsers will be re-downloaded"),
-        .init(relativePath: "Library/Developer/Xcode/DerivedData", titleRu: "Xcode: DerivedData", titleEn: "Xcode: DerivedData",
-              advanced: true, commandID: nil,
-              warningRu: "Xcode пересоберёт проект", warningEn: "Xcode will rebuild the project"),
-        .init(relativePath: ".local/share/NuGet", titleRu: "NuGet: кэш пакетов", titleEn: "NuGet: package cache",
-              advanced: true, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/NuGet", titleRu: "NuGet: HTTP cache", titleEn: "NuGet: HTTP cache",
-              advanced: true, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".cache/huggingface", titleRu: "Hugging Face: модели", titleEn: "Hugging Face: models",
-              advanced: true, commandID: nil,
-              warningRu: "Модели скачаются заново", warningEn: "Models will be re-downloaded"),
-        .init(relativePath: ".ollama/models", titleRu: "Ollama: модели", titleEn: "Ollama: models",
-              advanced: true, commandID: nil,
-              warningRu: "Модели скачаются заново", warningEn: "Models will be re-downloaded"),
-        .init(relativePath: ".konan", titleRu: "Kotlin/Native cache", titleEn: "Kotlin/Native cache",
-              advanced: true, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/Coursier/v1", titleRu: "JVM: Coursier cache", titleEn: "JVM: Coursier cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".sbt/boot", titleRu: "Scala: sbt boot", titleEn: "Scala: sbt boot",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".gradle/wrapper/dists", titleRu: "Gradle: wrapper distributions", titleEn: "Gradle: wrapper distributions",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Application Support/Code/Cache", titleRu: "VS Code: cache", titleEn: "VS Code: cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Application Support/Code/CachedData", titleRu: "VS Code: cached data", titleEn: "VS Code: cached data",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Application Support/Cursor/Cache", titleRu: "Cursor: cache", titleEn: "Cursor: cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Application Support/Cursor/CachedData", titleRu: "Cursor: cached data", titleEn: "Cursor: cached data",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "Library/Caches/helm/repository", titleRu: "Helm: кэш чартов", titleEn: "Helm: chart cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".kube/cache", titleRu: "kubectl: кэш discovery", titleEn: "kubectl: discovery cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".cache/zig", titleRu: "Zig: cache", titleEn: "Zig: cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: ".terraform.d/plugin-cache", titleRu: "Terraform: plugin cache", titleEn: "Terraform: plugin cache",
-              advanced: false, commandID: nil, warningRu: nil, warningEn: nil),
-        .init(relativePath: "miniconda3/pkgs", titleRu: "Conda: пакеты (miniconda3)", titleEn: "Conda: packages (miniconda3)",
-              advanced: true, commandID: nil,
-              warningRu: "Пакеты скачаются заново", warningEn: "Packages will be re-downloaded"),
-        .init(relativePath: "anaconda3/pkgs", titleRu: "Conda: пакеты (anaconda3)", titleEn: "Conda: packages (anaconda3)",
-              advanced: true, commandID: nil,
-              warningRu: "Пакеты скачаются заново", warningEn: "Packages will be re-downloaded"),
-        .init(relativePath: "miniforge3/pkgs", titleRu: "Conda: пакеты (miniforge3)", titleEn: "Conda: packages (miniforge3)",
-              advanced: true, commandID: nil,
-              warningRu: "Пакеты скачаются заново", warningEn: "Packages will be re-downloaded"),
-        .init(relativePath: "opt/miniconda3/pkgs", titleRu: "Conda: пакеты (/opt/miniconda3)", titleEn: "Conda: packages (/opt/miniconda3)",
-              advanced: true, commandID: nil,
-              warningRu: "Пакеты скачаются заново", warningEn: "Packages will be re-downloaded"),
-        .init(relativePath: "opt/anaconda3/pkgs", titleRu: "Conda: пакеты (/opt/anaconda3)", titleEn: "Conda: packages (/opt/anaconda3)",
-              advanced: true, commandID: nil,
-              warningRu: "Пакеты скачаются заново", warningEn: "Packages will be re-downloaded"),
-        .init(relativePath: "Library/Developer/Xcode/iOS DeviceSupport", titleRu: "Xcode: iOS DeviceSupport", titleEn: "Xcode: iOS DeviceSupport",
-              advanced: true, commandID: nil,
-              warningRu: "Файлы пересоздадутся при подключении устройства",
-              warningEn: "Files are recreated when a device is connected"),
-        .init(relativePath: "Library/Android/sdk/system-images", titleRu: "Android: system images", titleEn: "Android: system images",
-              advanced: true, commandID: nil,
-              warningRu: "Образы скачаются заново", warningEn: "Images will be re-downloaded"),
-        .init(relativePath: ".cache/torch", titleRu: "PyTorch: кэш моделей", titleEn: "PyTorch: model cache",
-              advanced: true, commandID: nil,
-              warningRu: "Веса скачаются заново", warningEn: "Weights will be re-downloaded"),
-        .init(relativePath: ".lmstudio/models", titleRu: "LM Studio: модели", titleEn: "LM Studio: models",
-              advanced: true, commandID: nil,
-              warningRu: "Модели скачаются заново", warningEn: "Models will be re-downloaded"),
+        // MARK: Web & backend
+
+        make("Library/Caches/Yarn", "Yarn: кэш пакетов", "Yarn: package cache", .web),
+        make(".yarn/berry/cache", "Yarn Berry: global cache", "Yarn Berry: global cache", .web,
+             advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make(".npm/_npx", "npm: кэш npx", "npm: npx cache", .web),
+        make(".cache/node-gyp", "Node: заголовки node-gyp", "Node: node-gyp headers", .web),
+        make(".cache/firebase", "Firebase CLI: кэш", "Firebase CLI: cache", .web),
+        make("Library/Caches/deno", "Deno: кэш модулей", "Deno: module cache", .web),
+        make("Library/Caches/Cypress", "Cypress: бинарники и кэш", "Cypress: binaries and cache", .web),
+        make(".cache/puppeteer", "Puppeteer: браузеры", "Puppeteer: browsers", .web),
+        make(".cache/selenium", "Selenium: драйверы и браузеры", "Selenium: drivers and browsers", .web),
+        make("Library/Caches/ms-playwright", "Playwright: браузеры", "Playwright: browsers", .web,
+             advanced: true, warning: ("Браузеры скачаются заново", "Browsers will be re-downloaded")),
+        make("Library/Caches/composer", "PHP: Composer cache", "PHP: Composer cache", .web),
+        make(".bundle/cache", "Ruby: Bundler cache", "Ruby: Bundler cache", .web),
+        make(".hex/packages", "Elixir: Hex packages", "Elixir: Hex packages", .web),
+        make(".cache/rebar3", "Erlang: rebar3 cache", "Erlang: rebar3 cache", .web),
+
+        // MARK: Mobile
+
+        make(".gradle/caches", "Gradle: кэш зависимостей", "Gradle: dependency caches", .mobile,
+             advanced: true, warning: ("Следующая сборка будет дольше", "The next build will be slower")),
+        make(".gradle/wrapper/dists", "Gradle: wrapper distributions", "Gradle: wrapper distributions", .mobile),
+        make(".android/cache", "Android: SDK cache", "Android: SDK cache", .mobile),
+        make("Library/Android/sdk/system-images", "Android: system images", "Android: system images", .mobile,
+             advanced: true, warning: ("Образы скачаются заново", "Images will be re-downloaded")),
+        make("Library/Caches/CocoaPods", "CocoaPods: кэш pod'ов", "CocoaPods: pod cache", .mobile),
+        make(".cocoapods/repos", "CocoaPods: spec-репозитории", "CocoaPods: spec repositories", .mobile,
+             advanced: true, warning: ("`pod repo update` склонирует их заново", "`pod repo update` clones them again")),
+        make(".pub-cache", "Dart/Flutter: pub cache", "Dart/Flutter: pub cache", .mobile),
+        make("Library/Caches/fastlane", "fastlane: кэш", "fastlane: cache", .mobile),
+        make(".konan", "Kotlin/Native cache", "Kotlin/Native cache", .mobile,
+             advanced: true, warning: ("Зависимости скачаются при следующей сборке", "Dependencies download on the next build")),
+        make("Library/Developer/Xcode/DerivedData", "Xcode: DerivedData", "Xcode: DerivedData", .mobile,
+             advanced: true, warning: ("Xcode пересоберёт проект", "Xcode will rebuild the project")),
+        make("Library/Developer/Xcode/iOS DeviceSupport", "Xcode: iOS DeviceSupport", "Xcode: iOS DeviceSupport", .mobile,
+             advanced: true, warning: ("Файлы пересоздадутся при подключении устройства", "Files are recreated when a device is connected")),
+        make("Library/Developer/Xcode/UserData/Previews", "Xcode: Previews", "Xcode: Previews", .mobile,
+             advanced: true, warning: ("SwiftUI-превью пересоздадутся", "SwiftUI previews are recreated")),
+        make("Library/Developer/CoreSimulator/Caches", "CoreSimulator: кэш", "CoreSimulator: caches", .mobile),
+
+        // MARK: Desktop & native languages
+
+        make(".cargo/registry/cache", "Rust: кэш crates", "Rust: crates cache", .desktop),
+        make(".cargo/registry/src", "Rust: распакованные исходники", "Rust: extracted crate sources", .desktop),
+        make(".cargo/git", "Rust: git-зависимости", "Rust: git dependencies", .desktop,
+             advanced: true, warning: ("Git-зависимости склонируются заново", "Git dependencies will be re-cloned")),
+        make(".cache/ccache", "C/C++: ccache", "C/C++: ccache", .desktop),
+        make(".cache/clangd/index", "C/C++: индексы clangd", "C/C++: clangd indexes", .desktop),
+        make(".cache/bazel", "Bazel: output base", "Bazel: output base", .desktop),
+        make("Library/Caches/bazelisk", "Bazelisk: скачанные bazel", "Bazelisk: downloaded bazel", .desktop),
+        make(".conan2/p", "C/C++: Conan 2 packages", "C/C++: Conan 2 packages", .desktop,
+             advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make(".cache/vcpkg", "C/C++: vcpkg archives", "C/C++: vcpkg archives", .desktop),
+        make("Library/Caches/go-build", "Go: build cache", "Go: build cache", .desktop,
+             commandID: "go-clean-cache"),
+        make("go/pkg/mod", "Go: кэш модулей", "Go: module cache", .desktop,
+             advanced: true, commandID: "go-clean-modcache",
+             warning: ("Все зависимости перекачаются при следующей сборке", "All dependencies will be re-downloaded on the next build")),
+        make("Library/Caches/org.swift.swiftpm", "Swift: SPM cache", "Swift: SPM cache", .desktop),
+        make(".nuget/packages", ".NET: NuGet global packages", ".NET: NuGet global packages", .desktop,
+             advanced: true, warning: ("`dotnet restore` скачает пакеты заново", "`dotnet restore` downloads the packages again")),
+        make(".local/share/NuGet", ".NET: NuGet кэш пакетов", ".NET: NuGet package cache", .desktop,
+             advanced: true),
+        make("Library/Caches/NuGet", ".NET: NuGet HTTP cache", ".NET: NuGet HTTP cache", .desktop,
+             advanced: true),
+        make("Library/Caches/electron", "Electron: скачанные версии", "Electron: downloaded versions", .desktop),
+        make("Library/Caches/electron-builder", "electron-builder: кэш", "electron-builder: cache", .desktop),
+        make("Library/Unity/cache", "Unity: кэш пакетов", "Unity: package cache", .desktop),
+        make("Library/Application Support/Epic/UnrealEngine/Common/DerivedDataCache",
+             "Unreal Engine: DerivedDataCache", "Unreal Engine: DerivedDataCache", .desktop,
+             advanced: true, warning: ("Шейдеры пересоберутся при следующем запуске", "Shaders are rebuilt on the next launch")),
+        make(".cache/zig", "Zig: cache", "Zig: cache", .desktop),
+        make("Library/Application Support/Code/Cache", "VS Code: cache", "VS Code: cache", .desktop),
+        make("Library/Application Support/Code/CachedData", "VS Code: cached data", "VS Code: cached data", .desktop),
+        make("Library/Application Support/Code - Insiders/Cache", "VS Code Insiders: cache", "VS Code Insiders: cache", .desktop),
+        make("Library/Application Support/Cursor/Cache", "Cursor: cache", "Cursor: cache", .desktop),
+        make("Library/Application Support/Cursor/CachedData", "Cursor: cached data", "Cursor: cached data", .desktop),
+
+        // MARK: Embedded
+
+        make(".platformio/packages", "PlatformIO: платформы и тулчейны", "PlatformIO: platforms and toolchains", .embedded,
+             advanced: true, warning: ("PlatformIO скачает платформы заново", "PlatformIO re-downloads the platforms")),
+        make(".platformio/.cache", "PlatformIO: кэш сборки", "PlatformIO: build cache", .embedded),
+        make(".espressif/dist", "ESP-IDF: дистрибутивы", "ESP-IDF: distributions", .embedded),
+        make(".espressif/tools", "ESP-IDF: тулчейны", "ESP-IDF: toolchains", .embedded,
+             advanced: true, warning: ("`install.sh` переустановит тулчейны", "`install.sh` reinstalls the toolchains")),
+        make(".espressif/python_env", "ESP-IDF: python env", "ESP-IDF: python env", .embedded,
+             advanced: true, warning: ("`install.sh` пересоздаст окружение", "`install.sh` recreates the environment")),
+        make("Library/Arduino15/staging", "Arduino: staging", "Arduino: staging", .embedded),
+        make("Library/Arduino15/packages", "Arduino: скачанные ядра", "Arduino: downloaded cores", .embedded,
+             advanced: true, warning: ("Ядра скачаются через Boards Manager", "Cores re-download through Boards Manager")),
+        make(".cache/arduino", "arduino-cli: кэш", "arduino-cli: cache", .embedded),
+        make(".cache/tinygo", "TinyGo: кэш сборки", "TinyGo: build cache", .embedded),
+
+        // MARK: Data, ML & cloud
+
+        make("Library/Caches/pip", "Python: pip cache", "Python: pip cache", .other),
+        make("Library/Caches/pypoetry", "Python: Poetry cache", "Python: Poetry cache", .other),
+        make(".cache/pre-commit", "Python: окружения pre-commit", "Python: pre-commit environments", .other),
+        make("miniconda3/pkgs", "Conda: пакеты (miniconda3)", "Conda: packages (miniconda3)", .other,
+             advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make("anaconda3/pkgs", "Conda: пакеты (anaconda3)", "Conda: packages (anaconda3)", .other,
+             advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make("miniforge3/pkgs", "Conda: пакеты (miniforge3)", "Conda: packages (miniforge3)", .other,
+             advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make("/opt/miniconda3/pkgs", "Conda: пакеты (/opt/miniconda3)", "Conda: packages (/opt/miniconda3)", .other,
+             advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make("/opt/anaconda3/pkgs", "Conda: пакеты (/opt/anaconda3)", "Conda: packages (/opt/anaconda3)", .other,
+             advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make(".cache/huggingface", "Hugging Face: модели", "Hugging Face: models", .other,
+             advanced: true, warning: ("Модели скачаются заново", "Models will be re-downloaded")),
+        make(".ollama/models", "Ollama: модели", "Ollama: models", .other,
+             advanced: true, warning: ("Модели скачаются заново", "Models will be re-downloaded")),
+        make(".lmstudio/models", "LM Studio: модели", "LM Studio: models", .other,
+             advanced: true, warning: ("Модели скачаются заново", "Models will be re-downloaded")),
+        make(".cache/torch", "PyTorch: кэш моделей", "PyTorch: model cache", .other,
+             advanced: true, warning: ("Веса скачаются заново", "Weights will be re-downloaded")),
+        make(".cache/whisper", "Whisper: модели", "Whisper: models", .other,
+             advanced: true, warning: ("Модели скачаются заново", "Models will be re-downloaded")),
+        make("Library/Caches/Coursier/v1", "JVM: Coursier cache", "JVM: Coursier cache", .other),
+        make(".sbt/boot", "Scala: sbt boot", "Scala: sbt boot", .other),
+        make(".ivy2/cache", "Scala/Java: ivy cache", "Scala/Java: ivy cache", .other),
+        make(".m2/repository", "Maven: локальный репозиторий", "Maven: local repository", .other,
+             advanced: true, warning: ("Артефакты скачаются заново", "Artifacts will be re-downloaded")),
+        make("Library/Caches/helm/repository", "Helm: кэш чартов", "Helm: chart cache", .other),
+        make(".kube/cache", "kubectl: кэш discovery", "kubectl: discovery cache", .other),
+        make(".terraform.d/plugin-cache", "Terraform: plugin cache", "Terraform: plugin cache", .other),
+        make(".cache/nix", "Nix: кэш", "Nix: cache", .other),
     ]
+
+    /// How many distinct toolchain caches the app knows about (shown in the UI
+    /// and in the README headline).
+    static var count: Int { specs.count }
+
+    static func specs(for platform: ToolPlatform) -> [ToolCacheSpec] {
+        specs.filter { $0.platform == platform }
+    }
 }
 
 enum AppVersion {
+    static let name = "DevSweep"
+    static let taglineEn = "Reclaim the gigabytes your toolchain quietly hoards."
+    static let taglineRu = "Верните гигабайты, которые ваш тулчейн тихо копит."
+
     static var current: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
     static var build: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
     }
-    static let releasesURL = URL(string: "https://github.com/atamaniuc/clean-disk-app/releases/latest")!
+    static let releasesURL = URL(string: "https://github.com/atamaniuc/devsweep/releases/latest")!
 }
 
 // Helpers shared by the UI and the log.

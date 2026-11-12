@@ -6,7 +6,7 @@ import Darwin
 /// non-zero when any expectation breaks.
 enum SelfTest {
     static func runAndExit() -> Never {
-        print("CleanDisk self-test")
+        print("DevSweep self-test \(AppVersion.current)")
         let result = ScanEngine.run()
         print("free=\(humanBytes(result.freeBytes)) total=\(humanBytes(result.totalBytes)) items=\(result.items.count)")
 
@@ -140,8 +140,121 @@ enum SelfTest {
             expect(result.notes.contains { $0.category == .brew }, "brew absence reported in notes")
         }
 
+        // MARK: Catalog breadth
+        //
+        // The toolchain catalog is the product: a generic cleaner knows
+        // Downloads and Trash, this app knows what each discipline leaves
+        // behind. These checks fail the build if the catalog shrinks or if a
+        // declared cache is not actually deletable through the allowlist.
+        print("toolchain catalog: \(ToolCaches.count) caches")
+        for platform in ToolPlatform.allCases {
+            let count = ToolCaches.specs(for: platform).count
+            print("  \(platform.rawValue): \(count)")
+            expect(count >= 5, "at least 5 \(platform.rawValue) toolchain caches")
+        }
+        expect(ToolCaches.count >= 60, "catalog covers at least 60 toolchain caches")
+        expect(Set(ToolCaches.specs.map(\.relativePath)).count == ToolCaches.count,
+               "no duplicate toolchain cache paths")
+        let notAllowed = ToolCaches.specs.filter { !Cleaner.isAllowed($0.url) }.map(\.relativePath)
+        expect(notAllowed.isEmpty, "every declared toolchain cache is allowlisted \(notAllowed)")
+        expect(!ToolCaches.specs.contains {
+            $0.relativePath.contains("node_modules") || $0.relativePath.contains("/.git")
+        }, "no toolchain cache inside node_modules or .git")
+
+        // Detected toolchain rows must carry their platform grouping.
+        let toolchainItems = result.items.filter { $0.category == .devtools || $0.category == .devtoolsAdvanced }
+        expect(toolchainItems.allSatisfy { $0.platform != nil }, "every toolchain item has a platform")
+        print("toolchain items detected on this machine: \(toolchainItems.count)")
+
+        // Documentation must not drift from the catalog: the README table is
+        // generated from the same specs and compared verbatim.
+        if let root = repositoryRoot() {
+            let readmePath = root.appendingPathComponent("README.md")
+            let readme = (try? String(contentsOf: readmePath, encoding: .utf8)) ?? ""
+            if let actual = markedBlock(in: readme, start: "<!-- tools:begin -->", end: "<!-- tools:end -->") {
+                let expected = toolTableMarkdown()
+                expect(actual == expected, "README tool table matches the app catalog")
+                if actual != expected {
+                    print("  README table is stale: run ./scripts/update-readme-tools.sh")
+                }
+            } else {
+                expect(false, "README contains the tools marker block")
+            }
+        } else {
+            print("  note: README check skipped (binary is not inside the source checkout)")
+        }
+
         print(failures == 0 ? "SELF-TEST PASSED" : "SELF-TEST FAILED (\(failures) checks)")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    // MARK: - Catalog as documentation
+
+    /// Markdown table generated from `ToolCaches.specs`, used by the README and
+    /// by `scripts/update-readme-tools.sh`. English titles keep the README
+    /// stable regardless of the system language.
+    static func toolTableMarkdown() -> String {
+        var lines: [String] = []
+        for platform in ToolPlatform.allCases {
+            let specs = ToolCaches.specs(for: platform)
+            guard !specs.isEmpty else { continue }
+            lines.append("### \(platform.englishTitle)")
+            lines.append("")
+            lines.append("| Tool | Cache path | Class |")
+            lines.append("| --- | --- | --- |")
+            for spec in specs {
+                let cls = spec.advanced ? "advanced" : "safe"
+                lines.append("| \(spec.titleEn) | `\(spec.displayPath)` | \(cls) |")
+            }
+            lines.append("")
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Plain grouped listing: the human-readable form of the catalog.
+    static func toolListText() -> String {
+        var lines: [String] = []
+        lines.append("DevSweep \(AppVersion.current): \(ToolCaches.count) toolchain caches")
+        for platform in ToolPlatform.allCases {
+            let specs = ToolCaches.specs(for: platform)
+            guard !specs.isEmpty else { continue }
+            lines.append("")
+            lines.append("\(platform.title) (\(specs.count))")
+            for spec in specs {
+                let cls = spec.advanced ? "advanced" : "safe    "
+                lines.append("  [\(cls)] \(spec.titleEn)  \(spec.displayPath)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    static func runTools(asMarkdown: Bool) -> Never {
+        print(asMarkdown ? toolTableMarkdown() : toolListText())
+        exit(0)
+    }
+
+    /// The source checkout, found by walking up from the executable. Returns nil
+    /// for a released bundle that sits outside the repository.
+    static func repositoryRoot() -> URL? {
+        var url = URL(fileURLWithPath: CommandLine.arguments.first ?? "").resolvingSymlinksInPath()
+        let manager = FileManager.default
+        for _ in 0..<7 {
+            url = url.deletingLastPathComponent()
+            if manager.fileExists(atPath: url.appendingPathComponent("README.md").path),
+               manager.fileExists(atPath: url.appendingPathComponent("Sources").path) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    static func markedBlock(in text: String, start: String, end: String) -> String? {
+        guard let startRange = text.range(of: start),
+              let endRange = text.range(of: end, range: startRange.upperBound..<text.endIndex) else {
+            return nil
+        }
+        return String(text[startRange.upperBound..<endRange.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Deletion benchmark on freshly created fake cache trees under

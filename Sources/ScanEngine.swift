@@ -452,10 +452,10 @@ enum ScanEngine {
 
     static func scanCaches() -> ([CleanupItem], [ScanNote]) {
         var items: [CleanupItem] = []
+        // Puppeteer and Selenium are toolchain caches now (web platform), so
+        // they are declared in ToolCaches.specs instead of here.
         let simple: [(String, String)] = [
-            (".cache/puppeteer", L("Браузеры Puppeteer (Chrome, headless-shell)", "Puppeteer browsers (Chrome, headless-shell)")),
             (".cache/nvim/jdtls", L("Индексы Java-языкового сервера jdtls", "Java language server (jdtls) indexes")),
-            (".cache/selenium", L("Драйверы Selenium", "Selenium drivers")),
         ]
         for (relative, title) in simple {
             let url = home.appendingPathComponent(relative)
@@ -489,7 +489,7 @@ enum ScanEngine {
         let group = DispatchGroup()
 
         for (index, spec) in specs.enumerated() {
-            let url = home.appendingPathComponent(spec.relativePath)
+            let url = spec.url
             guard Disk.exists(url) else { continue }
             group.enter()
             DispatchQueue.global(qos: .utility).async {
@@ -506,7 +506,7 @@ enum ScanEngine {
         for (index, spec) in specs.enumerated() {
             let size = sizes[index]
             guard size > 0 else { continue }
-            let url = home.appendingPathComponent(spec.relativePath)
+            let url = spec.url
             let category: CleanupCategory = spec.advanced ? .devtoolsAdvanced : .devtools
             let action: CleanupAction = spec.commandID.map { .command($0) } ?? .remove(url)
             let warning = spec.warningRu.map { L($0, spec.warningEn ?? $0) }
@@ -516,7 +516,8 @@ enum ScanEngine {
                                      sizeBytes: size,
                                      action: action,
                                      warning: warning,
-                                     previewPath: url))
+                                     previewPath: url,
+                                     platform: spec.platform))
         }
         return (items, [])
     }

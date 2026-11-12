@@ -44,7 +44,7 @@ enum Cleaner {
 
         let manager = FileManager.default
         for spec in ToolCaches.specs {
-            bases.append(home.appendingPathComponent(spec.relativePath))
+            bases.append(spec.url)
         }
 
         if let accounts = try? manager.contentsOfDirectory(at: telegramStable, includingPropertiesForKeys: nil) {
