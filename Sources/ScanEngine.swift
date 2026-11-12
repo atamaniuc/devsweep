@@ -517,7 +517,11 @@ enum ScanEngine {
                                      action: action,
                                      warning: warning,
                                      previewPath: url,
-                                     platform: spec.platform))
+                                     platform: spec.platform,
+                                     keywords: [spec.titleRu, spec.titleEn,
+                                                spec.relativePath,
+                                                spec.platform.englishTitle],
+                                     glyph: spec.glyph))
         }
         return (items, [])
     }

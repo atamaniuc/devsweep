@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import AppKit
 
 /// Headless verification of the scan engine and the deletion allowlist.
 /// Run the built binary with `--self-test`; it prints PASS/FAIL lines and exits
@@ -11,7 +12,7 @@ enum SelfTest {
         print("free=\(humanBytes(result.freeBytes)) total=\(humanBytes(result.totalBytes)) items=\(result.items.count)")
 
         for item in result.items {
-            print("  item \(item.category.rawValue) size=\(item.sizeBytes) selected=\(item.selected) title=\(item.title)")
+            print("  item \(item.category.rawValue) size=\(item.sizeBytes) title=\(item.title)")
         }
         for note in result.notes {
             print("  note \(note.category.rawValue): \(note.text)")
@@ -94,8 +95,11 @@ enum SelfTest {
         // Command whitelist: only the known ids resolve.
         expect(Cleaner.perform([]).isEmpty, "empty plan does nothing")
 
-        // Dry run: preview must enumerate real files for remove targets.
-        let selected = result.items.filter { $0.selected }
+        // Dry run: preview must enumerate real files for remove targets. The
+        // headless path uses the same ledger and the same defaults as the window.
+        var previewLedger = SelectionLedger()
+        previewLedger.load(result.items)
+        let selected = previewLedger.selectedItems(in: result.items)
         let preview = PreviewBuilder.build(items: selected)
         print("preview: targets=\(preview.targetCount) files=\(preview.fileCount) size=\(humanBytes(preview.totalBytes))")
         for target in preview.targets {
@@ -115,6 +119,20 @@ enum SelfTest {
         if let bun = preview.targets.first(where: { $0.category == "bun" }), bun.sizeBytes > 0 {
             expect(bun.fileCount > 0, "preview lists bun cache files")
         }
+
+        // "Show plan" must be instant: the plan carries sizes only, and the
+        // 300k-file walk happens per row when the user expands it.
+        var planLedger = SelectionLedger()
+        planLedger.load(result.items)
+        let planItems = planLedger.selectedItems(in: result.items)
+        let planStart = Date()
+        var plan = PreviewBuilder.plan(items: planItems)
+        for _ in 0..<50 { plan = PreviewBuilder.plan(items: planItems) }
+        let planMillis = Date().timeIntervalSince(planStart) * 1000 / 50
+        print(String(format: "dry-run plan: %.2f ms for %d rows (no file walk)", planMillis, plan.targetCount))
+        expect(plan.targetCount == planItems.count, "plan covers every selected row")
+        expect(plan.targets.allSatisfy { $0.files.isEmpty }, "plan defers the file lists to row expansion")
+        expect(planMillis < 50, "plan stays under 50 ms per open")
 
         // The expanded categories must actually be detected on this machine.
         let categories = Set(result.items.map(\.category.rawValue))
@@ -165,6 +183,136 @@ enum SelfTest {
         let toolchainItems = result.items.filter { $0.category == .devtools || $0.category == .devtoolsAdvanced }
         expect(toolchainItems.allSatisfy { $0.platform != nil }, "every toolchain item has a platform")
         print("toolchain items detected on this machine: \(toolchainItems.count)")
+
+        // MARK: Selection ledger, search and defaults
+        //
+        // The header's "can be freed" number, Check all/Uncheck all and the
+        // search box are pure logic (SelectionLedger, SearchQuery,
+        // CleanupFilters). Testing them here means the gate covers exactly the
+        // functions the SwiftUI views call.
+
+        let heavy = CleanupItem(category: .devtoolsAdvanced, title: "synthetic advanced",
+                                detail: "/private/tmp/synthetic-advanced", sizeBytes: 4_096,
+                                action: .remove(URL(fileURLWithPath: "/private/tmp")), platform: .cloud)
+        let light = CleanupItem(category: .devtools, title: "synthetic safe",
+                                detail: "/private/tmp/synthetic-safe", sizeBytes: 1_024,
+                                action: .remove(URL(fileURLWithPath: "/private/tmp")), platform: .web)
+
+        var ledger = SelectionLedger()
+        ledger.load([heavy, light])
+        expect(ledger.count == 1 && ledger.bytes == 1_024,
+               "preselection: safe row checked, advanced row not")
+        expect(ledger.set(heavy.id, selected: true), "checking a row reports a change")
+        expect(ledger.bytes == 5_120, "checking a row adds its size to can-be-freed")
+        expect(!ledger.set(heavy.id, selected: true), "checking twice is a no-op")
+        expect(ledger.set(heavy.id, selected: false), "unchecking a row reports a change")
+        expect(ledger.bytes == 1_024, "unchecking a row subtracts its size")
+        ledger.setAll([heavy, light], selected: true)
+        expect(ledger.count == 2 && ledger.bytes == 5_120, "Check all covers every visible row")
+        ledger.setAll([heavy, light], selected: false)
+        expect(ledger.isEmpty && ledger.bytes == 0, "Uncheck all empties the ledger")
+
+        // A checkbox must stay instant: the header number is O(1), not a filter
+        // over the list on every click.
+        let toggleStart = Date()
+        var speedLedger = SelectionLedger()
+        speedLedger.load([heavy, light])
+        for _ in 0..<10_000 {
+            speedLedger.set(heavy.id, selected: true)
+            speedLedger.set(heavy.id, selected: false)
+        }
+        let toggleMillis = Date().timeIntervalSince(toggleStart) * 1000
+        print(String(format: "selection ledger: 20,000 toggles in %.2f ms", toggleMillis))
+        expect(toggleMillis < 250, "20,000 checkbox toggles stay under 250 ms")
+
+        expect(UIDefaults.showAdvanced, "advanced categories are shown by default")
+        expect(UIDefaults.dryRun, "dry run is on by default")
+        expect(!UIDefaults.preselectAdvanced, "advanced rows are not preselected by default")
+
+        let solana = CleanupItem(category: .devtools, title: "Solana: build cache",
+                                 detail: "/Users/x/.cache/solana", sizeBytes: 0,
+                                 action: .remove(URL(fileURLWithPath: "/private/tmp")), platform: .web3,
+                                 keywords: ["Solana: build cache", ".cache/solana", "Web3 & blockchain"])
+        expect(SearchQuery.matches(solana, "solana"), "search finds a tool by name")
+        expect(SearchQuery.matches(solana, "SOLANA"), "search is case-insensitive")
+        expect(SearchQuery.matches(solana, "web3"), "search finds rows by discipline group")
+        expect(SearchQuery.matches(solana, "solana web3"), "multiple words are ANDed")
+        expect(!SearchQuery.matches(solana, "gradle"), "unrelated query does not match")
+        expect(!SearchQuery.matches(solana, "web3 gradle"), "one missing word rejects the row")
+        expect(SearchQuery.matches(solana, "   "), "blank query matches everything")
+
+        for platform in ToolPlatform.allCases {
+            let probe = CleanupItem(category: .devtools, title: "probe", detail: "/private/tmp/probe",
+                                    sizeBytes: 0, action: .remove(URL(fileURLWithPath: "/private/tmp")),
+                                    platform: platform)
+            expect(SearchQuery.matches(probe, platform.rawValue),
+                   "group \(platform.rawValue) is searchable by its name")
+            expect(SearchQuery.matches(probe, platform.englishTitle),
+                   "group \(platform.rawValue) is searchable by its English title")
+        }
+
+        let catalogProbes = ToolCaches.specs.map { spec in
+            CleanupItem(category: spec.advanced ? .devtoolsAdvanced : .devtools,
+                        title: spec.titleRu,
+                        detail: spec.url.path,
+                        sizeBytes: 0,
+                        action: .remove(spec.url),
+                        platform: spec.platform,
+                        keywords: [spec.titleEn, spec.relativePath])
+        }
+        expect(zip(catalogProbes, ToolCaches.specs).allSatisfy { SearchQuery.matches($0.0, $0.1.titleEn) },
+               "every catalog cache is findable by its English name")
+
+        let filtered = CleanupFilters.visible([solana, heavy, light], query: "web3", showAdvanced: false)
+        expect(filtered.map(\.id) == [solana.id], "search narrows the list before the advanced switch")
+        let advancedOnly = CleanupFilters.visible([heavy, light], query: "", showAdvanced: false)
+        expect(advancedOnly.map(\.id) == [light.id], "advanced switch hides advanced rows when off")
+
+        // MARK: Catalog coverage and brand identity
+        //
+        // The icons must be recognisable at a glance: every catalog entry has
+        // a curated brand glyph, every glyph is a real SF Symbol on this macOS,
+        // and every CLI installed here maps to the catalog or a dedicated
+        // scanner. That last check is what catches a missing Terraform/Prisma
+        // entry instead of leaving it for a user to notice.
+
+        let uncurated = ToolCaches.specs.filter { ToolBrand.look(for: $0) == nil }.map(\.titleEn)
+        print("catalog: \(ToolCaches.count) caches, \(uncurated.count) without a brand glyph")
+        expect(uncurated.isEmpty, "every catalog cache has a brand icon \(uncurated)")
+        expect(ToolCaches.count >= 105, "catalog covers at least 105 toolchain caches")
+
+        let brandSymbols = Set(ToolCaches.specs.map { $0.glyph.systemImage })
+            .union(CleanupCategory.allCases.map { ToolBrand.forCategory($0).systemImage })
+        let missingSymbols = brandSymbols.filter {
+            NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil
+        }.sorted()
+        print("brand symbols: \(brandSymbols.count) unique, missing: \(missingSymbols)")
+        expect(missingSymbols.isEmpty, "every brand SF Symbol exists on this macOS")
+
+        for required in ["Library/Caches/node-gyp", "Library/Caches/bun", ".cache/prisma",
+                         ".terraform.d/checkpoint_cache", ".cache/gh", ".ivy2/jars",
+                         ".cache/vscode-ripgrep"] {
+            expect(ToolCaches.specs.contains { $0.relativePath == required },
+                   "catalog covers \(required)")
+        }
+
+        // Installed CLIs must be supported: no silent holes.
+        let cliList = ToolCoverage.tools.map(\.cli).joined(separator: " ")
+        let installedResult = Shell.login(
+            "for c in \(cliList); do command -v \"$c\" >/dev/null 2>&1 && echo \"$c\"; done")
+        let installedCLIs = Set(installedResult.stdout.split(separator: "\n").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty })
+        print("installed CLIs seen by the coverage audit: \(installedCLIs.sorted().joined(separator: ", "))")
+        let coverageIssues = ToolCoverage.coverageIssues { installedCLIs.contains($0) }
+        expect(coverageIssues.isEmpty, "every installed CLI is in the catalog or has a scanner \(coverageIssues)")
+        expect(ToolCoverage.tools.count >= 40, "coverage audit tracks at least 40 tools")
+
+        // Searching a supported-but-absent tool must name it instead of
+        // pretending the catalog is empty.
+        let terraformMatches = SearchQuery.matchingSpecs("terraform")
+        expect(terraformMatches.contains { $0.titleEn.lowercased().contains("terraform") },
+               "catalog search finds supported tools that are not installed (terraform)")
 
         // Documentation must not drift from the catalog: the README table is
         // generated from the same specs and compared verbatim.
@@ -231,6 +379,47 @@ enum SelfTest {
     static func runTools(asMarkdown: Bool) -> Never {
         print(asMarkdown ? toolTableMarkdown() : toolListText())
         exit(0)
+    }
+
+    /// `--audit`: which catalog caches exist on this machine, their sizes, which
+    /// are absent, and which installed CLIs the catalog/scanner list does not
+    /// cover. This is the measurement behind the catalog, not a guess.
+    static func runAudit() -> Never {
+        print("DevSweep \(AppVersion.current) catalog audit")
+        var present: [(ToolCacheSpec, Int64)] = []
+        var missing: [ToolCacheSpec] = []
+        for spec in ToolCaches.specs {
+            if Disk.exists(spec.url) {
+                present.append((spec, Disk.sizeOnDisk(spec.url)))
+            } else {
+                missing.append(spec)
+            }
+        }
+        present.sort { $0.1 > $1.1 }
+        let total = present.reduce(Int64(0)) { $0 + $1.1 }
+        print("catalog=\(ToolCaches.count) present=\(present.count) absent=\(missing.count) foundSize=\(humanBytes(total))")
+        for (spec, size) in present {
+            print("  FOUND  \(humanBytes(size))  \(spec.titleEn)  \(spec.displayPath)")
+        }
+        for spec in missing {
+            print("  ABSENT  \(spec.titleEn)  \(spec.displayPath)")
+        }
+
+        let cliList = ToolCoverage.tools.map(\.cli).joined(separator: " ")
+        let installedResult = Shell.login(
+            "for c in \(cliList); do command -v \"$c\" >/dev/null 2>&1 && echo \"$c\"; done")
+        let installedCLIs = Set(installedResult.stdout.split(separator: "\n").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty })
+        print("installed CLIs: \(installedCLIs.sorted().joined(separator: ", "))")
+        let issues = ToolCoverage.coverageIssues { installedCLIs.contains($0) }
+        if issues.isEmpty {
+            print("coverage: every installed CLI is covered by the catalog or a scanner")
+        } else {
+            print("coverage issues:")
+            for issue in issues { print("  MISSING  \(issue)") }
+        }
+        exit(issues.isEmpty ? 0 : 1)
     }
 
     /// The source checkout, found by walking up from the executable. Returns nil
@@ -334,7 +523,9 @@ enum SelfTest {
         let result = ScanEngine.run()
         let scanTime = Date().timeIntervalSince(scanStart)
         let walkStart = Date()
-        let report = PreviewBuilder.build(items: result.items.filter { $0.selected })
+        var ledger = SelectionLedger()
+        ledger.load(result.items)
+        let report = PreviewBuilder.build(items: ledger.selectedItems(in: result.items))
         let walkTime = Date().timeIntervalSince(walkStart)
         let reportStart = Date()
         let text = report.textReport

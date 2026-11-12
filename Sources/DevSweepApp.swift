@@ -12,6 +12,9 @@ struct DevSweepApp: App {
         if CommandLine.arguments.contains("--scan") {
             SelfTest.runScan()
         }
+        if CommandLine.arguments.contains("--audit") {
+            SelfTest.runAudit()
+        }
         if CommandLine.arguments.contains("--tools-md") {
             SelfTest.runTools(asMarkdown: true)
         }
@@ -29,6 +32,6 @@ struct DevSweepApp: App {
             ContentView()
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 920, height: 760)
+        .defaultSize(width: 1040, height: 860)
     }
 }

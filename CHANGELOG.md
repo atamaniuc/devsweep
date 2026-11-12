@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.5.0 — 2026-11-13
+
+The window becomes a live control panel: what is free, what the checked rows
+would free, what is actually on this Mac, and it opens instantly.
+
+### Added — selection, plan and search
+
+- **Two live numbers in the header**: `free on disk` and `can be freed`. The
+  second one follows every checkbox click in O(1) (a selection ledger keeps the
+  running total, so it never re-sums or re-scans the list; 20,000 toggles take
+  ~3 ms in `--self-test`).
+- **Check all / Uncheck all** replace the single "clear selection" link. Both act
+  on the rows visible right now, so they respect the search filter.
+- **Instant search** by tool, path, warning or discipline (`web3`, `cloud`,
+  `gradle`, `pip`), with multi-word AND. `⌘F` focuses it, a miss shows the
+  supported-but-absent tools instead of an empty list.
+- **Advanced categories and dry run are on by default**; advanced rows are shown
+  but *not* preselected, so an accidental "clean" cannot touch data whose
+  warning the user has not read.
+
+### Added — honest catalog coverage
+
+- The header now says both numbers: **catalog of 108 caches** and **N found
+  here**. A missing tool reads as "nothing to clean on this Mac", not as an app
+  that forgot about it.
+- Ten real gaps found by auditing this machine against the catalog are closed:
+  macOS node-gyp headers (`~/Library/Caches/node-gyp`, 131 MB here), bun's
+  compile cache, Prisma engines, VS Code ripgrep and GitHub Copilot caches,
+  `.ivy2/jars`, pkg binaries, `gh` cache, and Terraform's update-check cache.
+  Terraform itself is not installed here, but `~/.terraform.d` exists and is now
+  detected.
+- `--audit` prints the catalog against the disk (found/absent, sizes) and fails
+  when an installed CLI has neither a catalog entry nor a dedicated scanner.
+  `--self-test` runs the same coverage check, so the next missing tool fails the
+  build instead of waiting for a user to notice.
+
+### Changed — modern look, readable type
+
+- Larger typography across the header, rows, section headers and log; secondary
+  text (free-on-disk labels, counts, hints) is 13-13.5 pt instead of 11-12 pt.
+- Rows are cards with a hover state, a 36 px brand glyph and the size in
+  semibold rounded digits. Rows for tools with a GUI app (Docker, VS Code,
+  Cursor, Xcode, Unity, Telegram, WhatsApp, IntelliJ) use the app's real macOS
+  icon; the rest use a per-tool SF Symbol in the brand colour (Rust orange,
+  npm red, Flutter blue, Supabase green...). `--self-test` refuses a catalog
+  entry without a curated glyph or a glyph that is not a real SF Symbol here.
+- **Decimal units**: GB/MB/KB everywhere (1 GB = 1,000,000,000 bytes), matching
+  Finder and the drive vendors, instead of GiB/MiB.
+
+### Fixed — "Show plan" no longer freezes
+
+- The sheet used to walk every selected cache before it appeared (~16 s for
+  286k files) and then build file rows for every target up front. Now the plan
+  opens immediately from the sizes the scan already has; a row's file list is
+  walked only when that row is expanded, shows a spinner while counting, and is
+  rendered in pages of 100 (with "show 200 more" / "show the first 2,000").
+  Saving the report still produces the complete list, with a progress indicator.
+- Self-test: the plan is built in ~0.07 ms for 28 rows in `--self-test`.
+
 ## 1.4.0 — 2026-11-13
 
 Two new disciplines, and the release pipeline now publishes itself.

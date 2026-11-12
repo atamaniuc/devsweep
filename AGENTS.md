@@ -14,8 +14,9 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
 
 - `--self-test` is the only gate that counts: allowlist, catalog breadth,
   README/catalog sync, delete path in `/private/tmp`, preview enumeration.
-- Headless modes: `--scan`, `--preview <file>`, `--tools`, `--tools-md`,
-  `--bench-delete`.
+- Headless modes: `--scan`, `--audit`, `--preview <file>`, `--tools`,
+  `--tools-md`, `--bench-delete`. `--audit` prints the catalog against the disk
+  and exits 1 when an installed CLI has neither a catalog entry nor a scanner.
 - Release: bump `CFBundleShortVersionString`/`CFBundleVersion` in `Info.plist`,
   add a `## <version>` section to `CHANGELOG.md`, commit, push, then push tag
   `v<version>`. `.github/workflows/release.yml` builds, tests, zips
@@ -27,7 +28,7 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
 
 ## Rules that bite
 
-- **The catalog is the product** (99 caches in 7 disciplines as of 1.4.0: web,
+- **The catalog is the product** (108 caches in 7 disciplines as of 1.5.0: web,
   mobile, desktop, embedded, cloud, Web3, data/ML). A new cache is one
   `make(...)` entry in `ToolCaches.specs` (`Sources/Models.swift`); it
   automatically drives scanning, the allowlist, the preview, the UI grouping and
@@ -45,6 +46,33 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
   walker within noise.
 - **Release artifacts must be universal** (Intel + Apple silicon); `build.sh`
   already enforces both slices.
+- **Selection is a ledger, not `items.filter`** (`SelectionLedger`): the
+  header's "can be freed" number reads a running `bytes`/`count` so a checkbox
+  click is O(1). Advanced rows are shown but *not* preselected — visible is not
+  the same as selected, and an unread warning must never be one click from
+  deletion.
+- **`Show plan` must not walk before it shows anything.** `PreviewBuilder.plan`
+  builds the sheet from sizes the scan already has; `PreviewBuilder.scanFiles`
+  walks one target only when its row is expanded, and the row renders pages of
+  100. Saving the report walks everything, with a spinner — that is the only
+  place a full walk is justified.
+- **Every row owns a brand glyph.** `ToolBrand.rules` maps catalog paths to an
+  SF Symbol + tint; when the tool ships a GUI app the real macOS icon is used
+  via its bundle id. `--self-test` fails on an uncurated spec or a missing SF
+  Symbol on the running macOS (e.g. `hardhat.fill` does not exist on macOS 13).
+- **Installed-but-unsupported is a bug, not a surprise.** `ToolCoverage` lists
+  every CLI known to be worth detecting; `--self-test` fails when one installed
+  here maps to neither the catalog nor a dedicated scanner. When a user says
+  "Terraform is missing", run `--audit` first: the entry may be absent from the
+  catalog, or simply absent from the disk (the header now shows both numbers).
+- **Sizes are decimal**: `humanBytes` prints GB/MB/KB (1 GB = 1e9 B) to match
+  Finder, though every size stays in bytes internally (`du -sk` × 1024).
+- **UI verification is possible without a build-time harness**: grant
+  Accessibility to the shell, then drive the running app with System Events —
+  `AXPress` on `AXLink`/`AXCheckBox`/`AXButton` elements and read `value of
+  every static text` to assert that e.g. unchecking a row changes "can be
+  freed" 25.6 GB → 25.5 GB. Window positions move between calls, so re-read
+  `position of window 1` before using `click at`.
 - **A scan must reset the list to the top.** An `NSScrollView` whose content
   grows from empty keeps the old bottom anchor, so a fresh result used to open
   mid-list; `ContentView` scrolls to `listTopID` after the phase returns to

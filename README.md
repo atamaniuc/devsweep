@@ -17,7 +17,7 @@ telemetry, no network access.
 
 ## Download
 
-Grab `DevSweep-1.4.0.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
+Grab `DevSweep-1.5.0.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
 unzip it and open `DevSweep.app`. The bundle is ad-hoc signed, so on first launch
 macOS may ask you to confirm with right-click → Open. Release notes live in
 [CHANGELOG.md](CHANGELOG.md); the running version is shown in the window and in
@@ -26,7 +26,7 @@ the footer link.
 ## Why it is different from other disk cleaners
 
 - **Built for developers, not for "junk".** A generic cleaner cannot tell a
-  Gradle cache from a project. DevSweep ships a catalog of **99 toolchain
+  Gradle cache from a project. DevSweep ships a catalog of **108 toolchain
   caches** and treats each one with the right tool: `npm cache clean --force`,
   `uv cache clean --force`, `go clean -cache`, `pnpm store prune`, Docker
   `builder prune --filter until=24h`, and plain allowlisted directory removal
@@ -42,6 +42,15 @@ the footer link.
 - **Honest about cost.** Caches that come back slowly (dependency caches, model
   weights, DerivedData) are grouped separately as *advanced*, each with a
   warning saying what will be re-downloaded or rebuilt.
+- **A control panel, not a progress bar.** The header shows free disk space and
+  *how much the checked rows would free* — recomputed in O(1) on every click.
+  **Check all / Uncheck all** act on what you can see, an instant search filters
+  by tool, path or discipline, and the dry-run sheet opens immediately: file
+  lists are counted per row when you expand it, not before.
+- **Brand icons, decimal units.** Every row carries its tool's identity — the
+  real macOS app icon where the tool ships one (Docker, VS Code, Cursor, Xcode,
+  Unity, Telegram), a brand-coloured SF Symbol otherwise — and sizes read in
+  GB/MB, the way Finder reports them.
 - **A real macOS app.** SwiftUI, one small universal binary, keyboard-native,
   light/dark aware, UI in the system language (English or Russian).
 
@@ -62,7 +71,10 @@ rebuilt, slower.
 | Yarn: package cache | `~/Library/Caches/Yarn` | safe |
 | Yarn Berry: global cache | `~/.yarn/berry/cache` | advanced |
 | npm: npx cache | `~/.npm/_npx` | safe |
-| Node: node-gyp headers | `~/.cache/node-gyp` | safe |
+| Node: node-gyp headers (Linux path) | `~/.cache/node-gyp` | safe |
+| Node: node-gyp headers | `~/Library/Caches/node-gyp` | safe |
+| bun: compile cache | `~/Library/Caches/bun` | safe |
+| Prisma: engines and cache | `~/.cache/prisma` | safe |
 | Firebase CLI: cache | `~/.cache/firebase` | safe |
 | Deno: module cache | `~/Library/Caches/deno` | safe |
 | Cypress: binaries and cache | `~/Library/Caches/Cypress` | safe |
@@ -116,6 +128,8 @@ rebuilt, slower.
 | Unity: package cache | `~/Library/Unity/cache` | safe |
 | Unreal Engine: DerivedDataCache | `~/Library/Application Support/Epic/UnrealEngine/Common/DerivedDataCache` | advanced |
 | Zig: cache | `~/.cache/zig` | safe |
+| VS Code: ripgrep cache | `~/.cache/vscode-ripgrep` | safe |
+| GitHub Copilot: cache | `~/.cache/github-copilot` | safe |
 | VS Code: cache | `~/Library/Application Support/Code/Cache` | safe |
 | VS Code: cached data | `~/Library/Application Support/Code/CachedData` | safe |
 | VS Code Insiders: cache | `~/Library/Application Support/Code - Insiders/Cache` | safe |
@@ -151,6 +165,8 @@ rebuilt, slower.
 | Supabase: CLI traces | `~/.supabase/traces` | safe |
 | Cloudflare Wrangler: cache | `~/.wrangler/cache` | safe |
 | Terraform: plugin cache | `~/.terraform.d/plugin-cache` | safe |
+| Terraform: update-check cache | `~/.terraform.d/checkpoint_cache` | safe |
+| GitHub CLI: cache | `~/.cache/gh` | safe |
 | Helm: chart cache | `~/Library/Caches/helm/repository` | safe |
 | kubectl: discovery cache | `~/.kube/cache` | safe |
 
@@ -188,6 +204,8 @@ rebuilt, slower.
 | Scala/Java: ivy cache | `~/.ivy2/cache` | safe |
 | Maven: local repository | `~/.m2/repository` | advanced |
 | Nix: cache | `~/.cache/nix` | safe |
+| Scala/Java: ivy jars | `~/.ivy2/jars` | advanced |
+| pkg: binary cache | `~/.cache/pkg` | safe |
 
 <!-- tools:end -->
 
@@ -241,6 +259,10 @@ bundle is ad-hoc signed and lives in `build/DevSweep.app`.
 
 # scan only: timing and detected items
 ./build/DevSweep.app/Contents/MacOS/DevSweep --scan
+
+# catalog vs this machine: found/absent caches with sizes, installed CLIs that
+# are neither in the catalog nor handled by a scanner (exit 1 when one is)
+./build/DevSweep.app/Contents/MacOS/DevSweep --audit
 
 # the toolchain catalog: plain text / markdown (used to regenerate this README)
 ./build/DevSweep.app/Contents/MacOS/DevSweep --tools

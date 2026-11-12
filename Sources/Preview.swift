@@ -16,6 +16,9 @@ struct PreviewTarget: Identifiable, Sendable {
     let fileCount: Int
     let files: [PreviewFile]
     let truncated: Bool
+    /// The scan result behind this row, so the sheet can list files on demand
+    /// instead of walking every selected cache before the sheet even opens.
+    let item: CleanupItem?
 }
 
 /// Result of a dry run: the exact files and commands a real run would touch.
@@ -60,6 +63,38 @@ struct PreviewReport: Identifiable {
 }
 
 enum PreviewBuilder {
+    /// The plan the sheet shows immediately: sizes and paths already known from
+    /// the scan, no tree walk at all. File lists are produced per target when a
+    /// row is expanded (`scanFiles(for:)`), so "Show plan" is instant even for a
+    /// 300k-file selection.
+    static func plan(items: [CleanupItem]) -> PreviewReport {
+        let targets = items.map { item -> PreviewTarget in
+            let command = item.action.commandID.map { Cleaner.commandLine($0) ?? $0 }
+            let path = item.previewPath?.path
+            return PreviewTarget(id: UUID(),
+                                 title: item.title,
+                                 category: item.category.title,
+                                 path: path ?? (command == nil ? item.detail : nil),
+                                 command: command,
+                                 sizeBytes: item.sizeBytes,
+                                 fileCount: 0,
+                                 files: [],
+                                 truncated: false,
+                                 item: item)
+        }
+        return PreviewReport(targets: targets,
+                             totalBytes: targets.reduce(Int64(0)) { $0 + $1.sizeBytes },
+                             createdAt: Date())
+    }
+
+    /// Walk one target on demand (called when the user expands its row).
+    /// Runs the same C walker as the full report, so the counts match.
+    static func scanFiles(for target: PreviewTarget) -> (files: [PreviewFile], count: Int, size: Int64) {
+        guard target.command == nil else { return ([], 0, 0) }
+        guard let path = target.path else { return ([], 0, 0) }
+        return scanDirectory(URL(fileURLWithPath: path))
+    }
+
     /// Caps memory for enormous caches; the text report says when a list is cut.
     static let maxFilesPerTarget = 200_000
 
@@ -100,7 +135,8 @@ enum PreviewBuilder {
                 sizeBytes: scan.size,
                 fileCount: scan.count,
                 files: scan.files,
-                truncated: scan.count > scan.files.count
+                truncated: scan.count > scan.files.count,
+                item: item
             )
         case .command(let id):
             let command = Cleaner.commandLine(id) ?? id
@@ -123,7 +159,8 @@ enum PreviewBuilder {
                 sizeBytes: size,
                 fileCount: count,
                 files: files,
-                truncated: count > files.count
+                truncated: count > files.count,
+                item: item
             )
         }
     }
