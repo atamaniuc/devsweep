@@ -182,7 +182,7 @@ enum ScanEngine {
     static func run() -> ScanResult {
         let scanners: [() -> ([CleanupItem], [ScanNote])] = [
             scanJetBrains, scanNpm, scanPnpm, scanBun, scanDocker,
-            scanBrew, scanMacports, scanCaches, scanTelegram, scanWhatsapp,
+            scanBrew, scanMacports, scanCaches, scanDevtools, scanTelegram, scanWhatsapp,
             scanTmp, scanSimulators,
         ]
 
@@ -472,10 +472,51 @@ enum ScanEngine {
             let hasUV = Shell.login("command -v uv").status == 0
             items.append(CleanupItem(category: .caches,
                                      title: L("Кэш uv", "uv cache"),
-                                     detail: hasUV ? "uv cache clean" : uvCache.path,
+                                     detail: hasUV ? "uv cache clean --force" : uvCache.path,
                                      sizeBytes: Disk.sizeOnDisk(uvCache),
                                      action: hasUV ? .command("uv-cache-clean") : .remove(uvCache),
                                      previewPath: uvCache))
+        }
+        return (items, [])
+    }
+
+    // MARK: - Toolchain caches (cargo, go, gradle, pip, ...)
+
+    static func scanDevtools() -> ([CleanupItem], [ScanNote]) {
+        let specs = ToolCaches.specs
+        var sizes = [Int64](repeating: 0, count: specs.count)
+        let lock = NSLock()
+        let group = DispatchGroup()
+
+        for (index, spec) in specs.enumerated() {
+            let url = home.appendingPathComponent(spec.relativePath)
+            guard Disk.exists(url) else { continue }
+            group.enter()
+            DispatchQueue.global(qos: .utility).async {
+                let size = Disk.sizeOnDisk(url)
+                lock.lock()
+                sizes[index] = size
+                lock.unlock()
+                group.leave()
+            }
+        }
+        group.wait()
+
+        var items: [CleanupItem] = []
+        for (index, spec) in specs.enumerated() {
+            let size = sizes[index]
+            guard size > 0 else { continue }
+            let url = home.appendingPathComponent(spec.relativePath)
+            let category: CleanupCategory = spec.advanced ? .devtoolsAdvanced : .devtools
+            let action: CleanupAction = spec.commandID.map { .command($0) } ?? .remove(url)
+            let warning = spec.warningRu.map { L($0, spec.warningEn ?? $0) }
+            items.append(CleanupItem(category: category,
+                                     title: L(spec.titleRu, spec.titleEn),
+                                     detail: url.path,
+                                     sizeBytes: size,
+                                     action: action,
+                                     warning: warning,
+                                     previewPath: url))
         }
         return (items, [])
     }

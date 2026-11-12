@@ -43,6 +43,10 @@ enum Cleaner {
         ]
 
         let manager = FileManager.default
+        for spec in ToolCaches.specs {
+            bases.append(home.appendingPathComponent(spec.relativePath))
+        }
+
         if let accounts = try? manager.contentsOfDirectory(at: telegramStable, includingPropertiesForKeys: nil) {
             for account in accounts where account.lastPathComponent.hasPrefix("account-") {
                 bases.append(account.appendingPathComponent("postbox/media"))
@@ -148,11 +152,13 @@ enum Cleaner {
         case "npm-cache-clean": return "npm cache clean --force"
         case "pnpm-store-prune": return "pnpm store prune"
         case "bun-cache-clean": return "bun pm cache rm"
-        case "uv-cache-clean": return "uv cache clean"
+        case "uv-cache-clean": return "uv cache clean --force"
         case "brew-cleanup": return "brew cleanup -s --prune=all"
         case "macports-clean": return "port -q clean --all installed"
         case "docker-builder-prune": return "docker builder prune -f --filter until=24h"
         case "docker-image-prune": return "docker image prune -f"
+        case "go-clean-cache": return "go clean -cache"
+        case "go-clean-modcache": return "go clean -modcache"
         case "simctl-delete-unavailable": return "xcrun simctl delete unavailable"
         default: return nil
         }
@@ -166,7 +172,7 @@ enum Cleaner {
     /// 300 s waiting on a lock held by `uv run ...`, which looked like a hang.
     static func timeout(for id: String) -> TimeInterval {
         switch id {
-        case "uv-cache-clean": return 25
+        case "uv-cache-clean": return 60
         case "pnpm-store-prune": return 120
         case "npm-cache-clean": return 180
         case "bun-cache-clean": return 240
@@ -174,6 +180,8 @@ enum Cleaner {
         case "docker-builder-prune": return 420
         case "docker-image-prune": return 120
         case "macports-clean": return 900
+        case "go-clean-cache": return 180
+        case "go-clean-modcache": return 300
         case "simctl-delete-unavailable": return 180
         default: return 120
         }
@@ -196,15 +204,16 @@ enum Cleaner {
             return Shell.login(commandToRun, timeout: limit)
         }
 
-        // uv takes its own cache lock; fail in 10 s instead of its default 300 s.
-        let actual = id == "uv-cache-clean" ? "UV_LOCK_TIMEOUT=10 uv cache clean" : command
-        var result = execute(actual)
+        // uv waits up to 300 s when another uv process holds the cache lock.
+        // `--force` skips that check (measured: 183 ms under a held lock), so
+        // no special env or lock path is needed here.
+        var result = execute(command)
 
         if result.status != 0, id == "pnpm-store-prune" {
             entries.append(CleanupLogEntry(L("pnpm store занят, повторяю через 2 с…",
                                              "pnpm store is busy, retrying in 2 s…"), level: .info))
             Thread.sleep(forTimeInterval: 2)
-            result = execute(actual)
+            result = execute(command)
         }
 
         if result.status == 0 {
@@ -221,8 +230,8 @@ enum Cleaner {
                                            level: .error))
         } else if id == "uv-cache-clean" && (result.output.lowercased().contains("lock") ||
                                              result.output.lowercased().contains("in-use")) {
-            entries.append(CleanupLogEntry(L("uv-кэш занят другим uv-процессом (например `uv run ...`) — пропущено, повторите позже",
-                                             "uv cache is locked by another uv process (e.g. `uv run ...`) — skipped, retry later"),
+            entries.append(CleanupLogEntry(L("uv всё ещё сообщает о локе даже с --force — пропущено",
+                                             "uv still reports a lock even with --force — skipped"),
                                            level: .warning))
         } else {
             entries.append(CleanupLogEntry(L("Команда не выполнена (код \(result.status)): \(command)",
@@ -238,6 +247,12 @@ enum Cleaner {
         }
         if id == "bun-cache-clean" {
             entries.append(contentsOf: remove(home.appendingPathComponent(".bun/install/cache")))
+        }
+        if id == "go-clean-cache" {
+            entries.append(contentsOf: remove(home.appendingPathComponent("Library/Caches/go-build")))
+        }
+        if id == "go-clean-modcache" {
+            entries.append(contentsOf: remove(home.appendingPathComponent("go/pkg/mod")))
         }
         return entries
     }

@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.2.0 — 2026-11-13
+
+Built for developers: the app now understands the caches that IDEs, package
+managers and model tools leave behind.
+
+### Added — developer toolchain caches
+
+- **Rust**: cargo registry cache, extracted crate sources, git dependencies.
+- **C/C++**: ccache, clangd indexes.
+- **Go**: build cache, module cache.
+- **JVM**: Gradle caches and wrapper distributions, Maven local repository,
+  Ivy cache, Coursier cache, sbt boot, Kotlin/Native.
+- **Python**: pip, Poetry, pre-commit environments, Conda package caches
+  (miniconda/anaconda/miniforge).
+- **PHP**: Composer cache. **Node**: Yarn cache. **Deno**. **Dart/Flutter**:
+  pub cache. **Swift**: SPM cache. **Android**: SDK cache, system images.
+- **Editors**: VS Code and Cursor caches.
+- **Infra**: Helm chart cache, kubectl discovery cache, Terraform plugin cache,
+  Zig cache.
+- **ML**: Playwright browsers, Xcode DerivedData and iOS DeviceSupport, NuGet
+  caches, PyTorch model cache, Hugging Face, Ollama and LM Studio models.
+
+Safe toolchain caches stay in "Toolchain caches"; dependency/model caches that
+rebuild or re-download slowly go to "Toolchain caches (advanced)" with explicit
+warnings.
+
+### Fixed
+
+- `uv cache clean` no longer stalls for up to 300 s (or gets skipped) when a
+  long-running `uv run ...` process holds the cache lock. The app now runs
+  `uv cache clean --force`: measured on an isolated cache with a held lock,
+  plain clean was still waiting after 10 s, `--force` finished in **183 ms**
+  and the lock-holding process kept running.
+
+### UI
+
+- Version is shown in the window (`v1.2.0`) and the footer links to the latest
+  GitHub release.
+
 ## 1.1.0 — 2026-11-12
 
 First public release.

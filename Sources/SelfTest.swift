@@ -48,6 +48,12 @@ enum SelfTest {
         expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/Library/Containers/net.whatsapp.WhatsApp/Data/Library/Caches")), "allow WhatsApp cache")
         expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/Library/Containers/net.whatsapp.WhatsApp/Data/Library")), "refuse WhatsApp Library root")
         expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/Library/Group Containers/6N38VWS5BX.ru.keepcoder.Telegram/stable")), "refuse Telegram group container root")
+        expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/.cargo/registry/cache")), "allow cargo registry cache")
+        expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/.cargo")), "refuse ~/.cargo root")
+        expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/go/pkg/mod")), "allow Go module cache")
+        expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/go")), "refuse ~/go root")
+        expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/.gradle/caches")), "allow Gradle caches")
+        expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/.pub-cache")), "allow pub cache")
         expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/node_modules/pkg")), "refuse node_modules")
         expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/.git/config")), "refuse .git")
         expect(Cleaner.isAllowed(URL(fileURLWithPath: "/private/tmp/claude-abc")), "allow tmp scratch")
@@ -123,6 +129,12 @@ enum SelfTest {
         }
         if Shell.login("command -v port").status == 0 {
             expect(categories.contains("macports"), "MacPorts detetected")
+        }
+        if FileManager.default.fileExists(atPath: home + "/.cargo/registry/cache") {
+            expect(categories.contains("devtools"), "cargo cache detected")
+        }
+        if FileManager.default.fileExists(atPath: home + "/go/pkg/mod") {
+            expect(categories.contains("devtoolsAdvanced"), "Go module cache detected as advanced")
         }
         if Shell.login("command -v brew").status != 0 {
             expect(result.notes.contains { $0.category == .brew }, "brew absence reported in notes")
