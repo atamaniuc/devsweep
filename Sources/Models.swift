@@ -258,6 +258,10 @@ enum ToolBrand {
         Rule(["node-gyp"], "shippingbox", .green),
         Rule(["firebase"], "flame.fill", .orange),
         Rule(["library/caches/deno"], "shippingbox", .gray),
+        Rule([".cache/deno"], "shippingbox", .gray),
+        Rule([".cache/yarn"], "circle.hexagongrid.fill", .blue),
+        Rule(["library/caches/typescript"], "chevron.left.forwardslash.chevron.right", .blue),
+        Rule([".cache/parcel"], "shippingbox.fill", .orange),
         Rule(["library/caches/cypress"], "checkmark.seal.fill", .green),
         Rule(["library/caches/bun"], "hare.fill", .pink),
         Rule([".cache/prisma"], "triangle.fill", .indigo),
@@ -266,12 +270,16 @@ enum ToolBrand {
         Rule(["ms-playwright"], "play.rectangle.fill", .green),
         Rule(["composer"], "square.stack.3d.up.fill", .brown),
         Rule([".bundle/cache"], "diamond.fill", .red),
+        Rule([".gem/ruby"], "diamond.fill", .red),
+        Rule([".gem/specs"], "diamond", .red),
+        Rule([".rvm/archives"], "diamond", .red),
         Rule([".hex/packages"], "hexagon.fill", .purple),
         Rule(["rebar3"], "gearshape.fill", .red),
 
         // Mobile
         Rule([".gradle/wrapper"], "square.stack.3d.up.fill", .green),
         Rule([".gradle/caches"], "hammer.fill", .green),
+        Rule(["androidstudio"], "hammer.fill", .green, app: "com.google.android.studio"),
         Rule(["system-images"], "iphone", .green),
         Rule([".android/cache"], "smartphone", .green),
         Rule(["cocoapods/repos"], "square.stack.3d.up.fill", .red),
@@ -283,8 +291,10 @@ enum ToolBrand {
         Rule(["devicesupport"], "iphone", .blue, app: "com.apple.dt.Xcode"),
         Rule(["xcode/userdata/previews"], "rectangle.on.rectangle", .blue, app: "com.apple.dt.Xcode"),
         Rule(["coresimulator"], "iphone", .blue, app: "com.apple.dt.Xcode"),
+        Rule(["caches/com.apple.dt.xcode"], "hammer.fill", .blue, app: "com.apple.dt.Xcode"),
 
         // Desktop & native
+        Rule([".cargo/registry/index"], "list.bullet.rectangle", .orange),
         Rule([".cargo/registry/src"], "gearshape.2", .orange),
         Rule([".cargo/registry/cache"], "gearshape.2.fill", .orange),
         Rule([".cargo/git"], "arrow.triangle.branch", .orange),
@@ -303,11 +313,18 @@ enum ToolBrand {
         Rule(["electron-builder"], "atom", .indigo),
         Rule(["library/caches/electron"], "atom", .blue),
         Rule(["library/unity"], "cube.fill", .gray),
+        Rule(["godot/export_templates"], "gamecontroller.fill", .blue),
         Rule(["unrealengine"], "cube.transparent", .gray),
         Rule(["cache/zig"], "bolt.fill", .yellow),
+        Rule([".cache/sccache"], "bolt.fill", .orange),
+        Rule([".rustup/downloads"], "arrow.down.circle.fill", .orange),
+        Rule([".rustup/tmp"], "gearshape.2", .orange),
         Rule([".cache/vscode-ripgrep"], "chevron.left.forwardslash.chevron.right", .blue,
              app: "com.microsoft.VSCode"),
         Rule([".cache/github-copilot"], "sparkles", .teal),
+        Rule(["windsurf"], "chevron.left.forwardslash.chevron.right", .teal),
+        Rule(["antigravity"], "chevron.left.forwardslash.chevron.right", .purple),
+        Rule(["caches/zed"], "z.square.fill", .gray),
         Rule(["code - insiders"], "chevron.left.forwardslash.chevron.right", .teal,
              app: "com.microsoft.VSCodeInsiders"),
         Rule(["support/code"], "chevron.left.forwardslash.chevron.right", .blue,
@@ -338,9 +355,18 @@ enum ToolBrand {
         Rule(["cache/whisper"], "waveform", .gray),
         Rule(["coursier"], "cup.and.saucer.fill", .orange),
         Rule([".sbt"], "cup.and.saucer.fill", .red),
+        Rule([".gradle/daemon"], "hammer.fill", .green),
         Rule(["ivy2"], "cup.and.saucer.fill", .orange),
         Rule([".m2/repository"], "shippingbox.fill", .red),
         Rule(["cache/nix"], "snowflake", .blue),
+        Rule(["cache/jax"], "function", .green),
+        Rule([".keras"], "brain.head.profile", .red),
+        Rule([".nv/computecache"], "cpu.fill", .green),
+        Rule([".triton/cache"], "bolt.horizontal.fill", .green),
+        Rule(["cache/jupyter"], "book.closed.fill", .orange),
+        Rule([".julia/compiled"], "function", .purple),
+        Rule([".julia/packages"], "shippingbox.fill", .purple),
+        Rule([".oh-my-zsh/cache"], "terminal.fill", .gray),
         Rule([".cache/pkg"], "shippingbox", .gray),
 
         // Cloud & infrastructure
@@ -358,7 +384,11 @@ enum ToolBrand {
         Rule(["plugin-cache"], "square.stack.3d.up.fill", .purple),
         Rule([".cache/gh"], "terminal.fill", .gray),
         Rule(["helm/repository"], "helm", .blue),
+        Rule([".kube/http-cache"], "square.grid.3x3.fill", .blue),
         Rule([".kube/cache"], "square.grid.3x3.fill", .blue),
+        Rule([".minikube/cache"], "shippingbox.fill", .blue),
+        Rule([".ansible/tmp"], "wrench.and.screwdriver", .red),
+        Rule([".vagrant.d/boxes"], "shippingbox", .indigo),
 
         // Web3 & blockchain
         Rule([".foundry"], "hammer.fill", .gray),
@@ -710,6 +740,114 @@ struct ToolCacheSpec: Sendable {
     var glyph: ToolGlyph {
         ToolBrand.look(for: self) ?? ToolBrand.generic(for: platform)
     }
+
+    /// A path with `*` in it, e.g. `~/.gem/ruby/*/cache`.
+    var isPattern: Bool { relativePath.contains("*") }
+
+    /// The deepest directory before the first wildcard component: the base the
+    /// allowlist may safely open up, and the starting point of the expansion.
+    var patternBaseURL: URL {
+        let components = relativePath.split(separator: "/").map(String.init)
+        let index = components.firstIndex { $0.contains("*") } ?? components.count
+        let base = components.prefix(index).joined(separator: "/")
+        if relativePath.hasPrefix("/") {
+            return URL(fileURLWithPath: "/" + base)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(base)
+    }
+
+    /// Concrete paths for this spec on disk. Non-pattern specs return their
+    /// single URL whether or not it exists; callers still check existence.
+    func matchingURLs() -> [URL] {
+        guard isPattern else { return [url] }
+        let components = relativePath.split(separator: "/").map(String.init)
+        let firstPattern = components.firstIndex { $0.contains("*") } ?? components.count
+        var candidates = [patternBaseURL]
+        for component in components[firstPattern...] {
+            var next: [URL] = []
+            for base in candidates {
+                if component.contains("*") {
+                    let entries = (try? FileManager.default.contentsOfDirectory(
+                        at: base, includingPropertiesForKeys: nil)) ?? []
+                    for entry in entries where Glob.matches(component, entry.lastPathComponent) {
+                        next.append(entry)
+                    }
+                } else {
+                    let candidate = base.appendingPathComponent(component)
+                    if FileManager.default.fileExists(atPath: candidate.path) {
+                        next.append(candidate)
+                    }
+                }
+            }
+            candidates = next
+        }
+        return candidates
+    }
+}
+
+/// Minimal glob support for catalog paths: only `*` inside a path component,
+/// used where a cache lives under a versioned directory
+/// (`~/.gem/ruby/*/cache`). Kept here so scanning, the allowlist and `--self-test`
+/// all agree on what a pattern matches.
+enum Glob {
+    static func matches(_ pattern: String, _ name: String) -> Bool {
+        let parts = pattern.split(separator: "*", omittingEmptySubsequences: false).map(String.init)
+        if parts.count == 1 { return pattern == name }
+        var rest = Substring(name)
+        if let first = parts.first, !first.isEmpty {
+            guard rest.hasPrefix(first) else { return false }
+            rest = rest.dropFirst(first.count)
+        }
+        for part in parts.dropFirst().dropLast() where !part.isEmpty {
+            guard let range = rest.range(of: part) else { return false }
+            rest = rest[range.upperBound...]
+        }
+        if let last = parts.last, !last.isEmpty {
+            guard rest.hasSuffix(last), rest.count >= last.count else { return false }
+        }
+        return true
+    }
+}
+
+/// Caches the app cleans through a dedicated scanner (a command, multi-path
+/// logic, or a runtime check) rather than a catalog spec. They are part of the
+/// supported surface, so the README documents them next to the catalog: "uv" or
+/// "npm" missing from the generated table used to look like missing support.
+enum ScannerCaches {
+    struct Entry: Sendable {
+        let titleEn: String
+        let pathsEn: String
+        let howEn: String
+    }
+
+    static let entries: [Entry] = [
+        Entry(titleEn: "npm", pathsEn: "~/.npm/_cacache",
+              howEn: "npm cache clean --force"),
+        Entry(titleEn: "pnpm", pathsEn: "~/Library/pnpm/store/v*, ~/.local/share/pnpm/store/v*",
+              howEn: "pnpm store prune + removal of stale store versions"),
+        Entry(titleEn: "bun", pathsEn: "~/.bun/install/cache",
+              howEn: "bun pm cache rm"),
+        Entry(titleEn: "uv", pathsEn: "~/.cache/uv",
+              howEn: "uv cache clean --force"),
+        Entry(titleEn: "Docker", pathsEn: "build cache, dangling images",
+              howEn: "docker builder prune --filter until=24h; docker image prune -f"),
+        Entry(titleEn: "Homebrew", pathsEn: "~/Library/Caches/Homebrew",
+              howEn: "brew cleanup -s --prune=all"),
+        Entry(titleEn: "MacPorts", pathsEn: "/opt/local/var/macports/build, distfiles",
+              howEn: "port -q clean --all installed (asks for the admin password)"),
+        Entry(titleEn: "IntelliJ IDEA", pathsEn: "~/Library/Caches/JetBrains/IntelliJIdea*",
+              howEn: "removes caches of versions that are not installed"),
+        Entry(titleEn: "nvim / jdtls", pathsEn: "~/.cache/nvim/jdtls",
+              howEn: "remove"),
+        Entry(titleEn: "Telegram", pathsEn: "per-account media cache",
+              howEn: "remove; messages stay"),
+        Entry(titleEn: "WhatsApp", pathsEn: "MediaCache and network cache",
+              howEn: "remove; messages stay"),
+        Entry(titleEn: "iOS simulators", pathsEn: "simulators missing from Xcode",
+              howEn: "xcrun simctl delete unavailable"),
+        Entry(titleEn: "/private/tmp", pathsEn: "scratch older than 14 days",
+              howEn: "remove"),
+    ]
 }
 
 /// Package-manager / toolchain caches. Every path is regenerable: the tool
@@ -747,6 +885,7 @@ enum ToolCaches {
         make(".cache/prisma", "Prisma: движки и кэш", "Prisma: engines and cache", .web),
         make(".cache/firebase", "Firebase CLI: кэш", "Firebase CLI: cache", .web),
         make("Library/Caches/deno", "Deno: кэш модулей", "Deno: module cache", .web),
+        make("Library/Caches/typescript", "TypeScript: кэш сервера", "TypeScript: server cache", .web),
         make("Library/Caches/Cypress", "Cypress: бинарники и кэш", "Cypress: binaries and cache", .web),
         make(".cache/puppeteer", "Puppeteer: браузеры", "Puppeteer: browsers", .web),
         make(".cache/selenium", "Selenium: драйверы и браузеры", "Selenium: drivers and browsers", .web),
@@ -754,6 +893,10 @@ enum ToolCaches {
              advanced: true, warning: ("Браузеры скачаются заново", "Browsers will be re-downloaded")),
         make("Library/Caches/composer", "PHP: Composer cache", "PHP: Composer cache", .web),
         make(".bundle/cache", "Ruby: Bundler cache", "Ruby: Bundler cache", .web),
+        make(".gem/ruby/*/cache", "Ruby: кэш скачанных gem'ов", "Ruby: downloaded gem cache", .web),
+        make(".gem/specs", "Ruby: кэш метаданных gem'ов", "Ruby: gem metadata cache", .web),
+        make(".rvm/archives", "Ruby: RVM архивы", "Ruby: RVM archives", .web,
+             advanced: true, warning: ("Архивы скачаются заново", "Archives will be re-downloaded")),
         make(".hex/packages", "Elixir: Hex packages", "Elixir: Hex packages", .web),
         make(".cache/rebar3", "Erlang: rebar3 cache", "Erlang: rebar3 cache", .web),
 
@@ -763,6 +906,7 @@ enum ToolCaches {
              advanced: true, warning: ("Следующая сборка будет дольше", "The next build will be slower")),
         make(".gradle/wrapper/dists", "Gradle: wrapper distributions", "Gradle: wrapper distributions", .mobile),
         make(".android/cache", "Android: SDK cache", "Android: SDK cache", .mobile),
+        make("Library/Caches/Google/AndroidStudio*", "Android Studio: кэши IDE", "Android Studio: IDE caches", .mobile),
         make("Library/Android/sdk/system-images", "Android: system images", "Android: system images", .mobile,
              advanced: true, warning: ("Образы скачаются заново", "Images will be re-downloaded")),
         make("Library/Caches/CocoaPods", "CocoaPods: кэш pod'ов", "CocoaPods: pod cache", .mobile),
@@ -779,9 +923,12 @@ enum ToolCaches {
         make("Library/Developer/Xcode/UserData/Previews", "Xcode: Previews", "Xcode: Previews", .mobile,
              advanced: true, warning: ("SwiftUI-превью пересоздадутся", "SwiftUI previews are recreated")),
         make("Library/Developer/CoreSimulator/Caches", "CoreSimulator: кэш", "CoreSimulator: caches", .mobile),
+        make("Library/Caches/com.apple.dt.Xcode", "Xcode: кэши IDE", "Xcode: IDE caches", .mobile,
+             advanced: true, warning: ("Xcode пересоздаст кэши", "Xcode recreates the caches")),
 
         // MARK: Desktop & native languages
 
+        make(".cargo/registry/index", "Rust: индекс реестра", "Rust: registry index", .desktop),
         make(".cargo/registry/cache", "Rust: кэш crates", "Rust: crates cache", .desktop),
         make(".cargo/registry/src", "Rust: распакованные исходники", "Rust: extracted crate sources", .desktop),
         make(".cargo/git", "Rust: git-зависимости", "Rust: git dependencies", .desktop,
@@ -808,17 +955,30 @@ enum ToolCaches {
         make("Library/Caches/electron", "Electron: скачанные версии", "Electron: downloaded versions", .desktop),
         make("Library/Caches/electron-builder", "electron-builder: кэш", "electron-builder: cache", .desktop),
         make("Library/Unity/cache", "Unity: кэш пакетов", "Unity: package cache", .desktop),
+        make("Library/Application Support/Godot/export_templates", "Godot: шаблоны экспорта", "Godot: export templates", .desktop,
+             advanced: true, warning: ("Шаблоны скачаются заново", "Templates will be re-downloaded")),
         make("Library/Application Support/Epic/UnrealEngine/Common/DerivedDataCache",
              "Unreal Engine: DerivedDataCache", "Unreal Engine: DerivedDataCache", .desktop,
              advanced: true, warning: ("Шейдеры пересоберутся при следующем запуске", "Shaders are rebuilt on the next launch")),
         make(".cache/zig", "Zig: cache", "Zig: cache", .desktop),
+        make(".cache/sccache", "Rust: sccache", "Rust: sccache", .desktop),
+        make(".rustup/downloads", "Rust: скачанные тулчейны", "Rust: downloaded toolchains", .desktop),
+        make(".rustup/tmp", "Rust: временные файлы rustup", "Rust: rustup temp files", .desktop),
         make(".cache/vscode-ripgrep", "VS Code: кэш ripgrep", "VS Code: ripgrep cache", .desktop),
         make(".cache/github-copilot", "GitHub Copilot: кэш", "GitHub Copilot: cache", .desktop),
         make("Library/Application Support/Code/Cache", "VS Code: cache", "VS Code: cache", .desktop),
         make("Library/Application Support/Code/CachedData", "VS Code: cached data", "VS Code: cached data", .desktop),
+        make("Library/Application Support/Code/GPUCache", "VS Code: GPU cache", "VS Code: GPU cache", .desktop),
+        make("Library/Application Support/Code/CachedExtensionVSIXs", "VS Code: кэш VSIX расширений", "VS Code: cached extension VSIX", .desktop),
         make("Library/Application Support/Code - Insiders/Cache", "VS Code Insiders: cache", "VS Code Insiders: cache", .desktop),
         make("Library/Application Support/Cursor/Cache", "Cursor: cache", "Cursor: cache", .desktop),
         make("Library/Application Support/Cursor/CachedData", "Cursor: cached data", "Cursor: cached data", .desktop),
+        make("Library/Application Support/Cursor/GPUCache", "Cursor: GPU cache", "Cursor: GPU cache", .desktop),
+        make("Library/Application Support/Windsurf/Cache", "Windsurf: cache", "Windsurf: cache", .desktop),
+        make("Library/Application Support/Windsurf/CachedData", "Windsurf: cached data", "Windsurf: cached data", .desktop),
+        make("Library/Application Support/Antigravity/Cache", "Antigravity: cache", "Antigravity: cache", .desktop),
+        make("Library/Application Support/Antigravity/CachedData", "Antigravity: cached data", "Antigravity: cached data", .desktop),
+        make("Library/Caches/Zed", "Zed: кэш редактора", "Zed: editor cache", .desktop),
 
         // MARK: Embedded
 
@@ -851,6 +1011,14 @@ enum ToolCaches {
              advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
         make("/opt/anaconda3/pkgs", "Conda: пакеты (/opt/anaconda3)", "Conda: packages (/opt/anaconda3)", .other,
              advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make(".cache/jax", "JAX: кэш компиляции", "JAX: compilation cache", .other),
+        make(".keras", "Keras: скачанные модели", "Keras: downloaded models", .other,
+             advanced: true, warning: ("Модели скачаются заново", "Models will be re-downloaded")),
+        make(".nv/ComputeCache", "CUDA: кэш компиляции", "CUDA: compute cache", .other),
+        make(".triton/cache", "Triton: кэш ядер", "Triton: kernel cache", .other),
+        make(".cache/jupyter", "Jupyter: кэш", "Jupyter: cache", .other),
+        make(".cache/huggingface/datasets", "Hugging Face: датасеты", "Hugging Face: datasets", .other,
+             advanced: true, warning: ("Датасеты скачаются заново", "Datasets will be re-downloaded")),
         make(".cache/huggingface", "Hugging Face: модели", "Hugging Face: models", .other,
              advanced: true, warning: ("Модели скачаются заново", "Models will be re-downloaded")),
         make(".ollama/models", "Ollama: модели", "Ollama: models", .other,
@@ -859,12 +1027,19 @@ enum ToolCaches {
              advanced: true, warning: ("Модели скачаются заново", "Models will be re-downloaded")),
         make(".cache/torch", "PyTorch: кэш моделей", "PyTorch: model cache", .other,
              advanced: true, warning: ("Веса скачаются заново", "Weights will be re-downloaded")),
+        make(".julia/compiled", "Julia: скомпилированный код", "Julia: compiled code", .other),
+        make(".julia/packages", "Julia: пакеты", "Julia: packages", .other,
+             advanced: true, warning: ("Пакеты скачаются заново", "Packages will be re-downloaded")),
+        make(".oh-my-zsh/cache", "Oh My Zsh: кэш плагинов", "Oh My Zsh: plugin cache", .other),
         make(".cache/whisper", "Whisper: модели", "Whisper: models", .other,
              advanced: true, warning: ("Модели скачаются заново", "Models will be re-downloaded")),
         make("Library/Caches/Coursier/v1", "JVM: Coursier cache", "JVM: Coursier cache", .other),
-        make(".sbt/boot", "Scala: sbt boot", "Scala: sbt boot", .other),
-        make(".ivy2/cache", "Scala/Java: ivy cache", "Scala/Java: ivy cache", .other),
-        make(".m2/repository", "Maven: локальный репозиторий", "Maven: local repository", .other,
+        make(".sbt/boot", "JVM: sbt boot (Spark, Scala)", "JVM: sbt boot (Spark, Scala)", .other),
+        make(".sbt/launchers", "JVM: sbt launchers", "JVM: sbt launchers", .other,
+             advanced: true, warning: ("Лаунчеры скачаются заново", "Launchers will be re-downloaded")),
+        make(".gradle/daemon", "Gradle: логи и состояние демона", "Gradle: daemon logs and state", .other),
+        make(".ivy2/cache", "JVM: Ivy cache (sbt, Spark)", "JVM: Ivy cache (sbt, Spark)", .other),
+        make(".m2/repository", "JVM: Maven local repo (Java, Spark)", "JVM: Maven local repo (Java, Spark)", .other,
              advanced: true, warning: ("Артефакты скачаются заново", "Artifacts will be re-downloaded")),
         make(".cache/nix", "Nix: кэш", "Nix: cache", .other),
         make(".ivy2/jars", "Scala/Java: ivy jars", "Scala/Java: ivy jars", .other,
@@ -891,6 +1066,11 @@ enum ToolCaches {
         make(".cache/gh", "GitHub CLI: кэш", "GitHub CLI: cache", .cloud),
         make("Library/Caches/helm/repository", "Helm: кэш чартов", "Helm: chart cache", .cloud),
         make(".kube/cache", "kubectl: кэш discovery", "kubectl: discovery cache", .cloud),
+        make(".kube/http-cache", "kubectl: HTTP-кэш", "kubectl: HTTP cache", .cloud),
+        make(".minikube/cache", "minikube: скачанные образы и бинарники", "minikube: cached images and binaries", .cloud),
+        make(".ansible/tmp", "Ansible: временные файлы", "Ansible: temp files", .cloud),
+        make(".vagrant.d/boxes", "Vagrant: скачанные boxes", "Vagrant: downloaded boxes", .cloud,
+             advanced: true, warning: ("Boxes скачаются заново (`vagrant box add`)", "Boxes are re-downloaded (`vagrant box add`)")),
 
         // MARK: Web3 & blockchain
 

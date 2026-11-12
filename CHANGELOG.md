@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.5.1 — 2026-11-13
+
+The catalog grows to **142 caches** and the docs stop hiding the ones a scanner
+handles (that is why "uv" and "npm" looked missing).
+
+### Added — broader, audit-driven coverage
+
+- **142 toolchain caches** (was 108). New entries were chosen from what
+  developers actually install and verified against the tools' own cache
+  conventions: IDE/Electron caches (VS Code GPU + cached VSIX, Cursor GPU cache,
+  Windsurf, Antigravity, Zed), Android Studio IDE caches (versioned pattern),
+  Godot export templates, minikube cached images, kubectl HTTP cache, Ansible
+  temp files, Vagrant boxes (advanced), sbt launchers, Gradle daemon state,
+  Ruby gem cache (`~/.gem/ruby/*/cache`) and gem metadata, JAX, Keras, CUDA
+  compute cache, Triton kernels, Jupyter and Hugging Face datasets.
+- **Wildcard catalog paths** (`~/.gem/ruby/*/cache`): a versioned cache becomes
+  one row per installed version, each named after its version and each passing
+  the allowlist through the pattern's parent directory.
+- **pnpm stale stores**: on this Mac `pnpm store path` is v10 (1.0 GB) while
+  v11 (4.7 GB) is unreachable for the current pnpm. The scanner now reports the
+  stale store versions as removable rows instead of silently ignoring 4.7 GB.
+- **Scanner-managed caches are documented**: the generated README section now
+  lists npm, pnpm, bun, uv, Docker, Homebrew, MacPorts, IntelliJ, nvim/jdtls,
+  Telegram, WhatsApp, simulators and `/private/tmp` — all supported, none of
+  them expressed as a path spec. `--self-test` fails if that section disappears.
+- Removed three Linux-only paths (`.cache/deno`, `.cache/yarn`, `.cache/parcel`)
+  that can never exist on macOS; catalog entries that can never match are noise,
+  not coverage.
+
+### Note — what is deliberately *not* cleaned
+
+Project-local caches live inside your repositories and are never touched:
+`.next/cache`, `.angular/cache`, `.turbo`, `node_modules/.cache` (Webpack, Nx,
+Metro, Vite), `_build` (Mix), `target` (Rust/dbt), `var/cache` (Symfony),
+`storage/framework` (Laravel), Godot's project cache. Cleaning those would mean
+deleting build artifacts of a project the user may be mid-way through; the app
+only removes user-level caches that the tool itself recreates.
+
 ## 1.5.0 — 2026-11-13
 
 The window becomes a live control panel: what is free, what the checked rows

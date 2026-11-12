@@ -279,7 +279,7 @@ enum SelfTest {
         let uncurated = ToolCaches.specs.filter { ToolBrand.look(for: $0) == nil }.map(\.titleEn)
         print("catalog: \(ToolCaches.count) caches, \(uncurated.count) without a brand glyph")
         expect(uncurated.isEmpty, "every catalog cache has a brand icon \(uncurated)")
-        expect(ToolCaches.count >= 105, "catalog covers at least 105 toolchain caches")
+        expect(ToolCaches.count >= 120, "catalog covers at least 120 toolchain caches")
 
         let brandSymbols = Set(ToolCaches.specs.map { $0.glyph.systemImage })
             .union(CleanupCategory.allCases.map { ToolBrand.forCategory($0).systemImage })
@@ -294,6 +294,43 @@ enum SelfTest {
                          ".cache/vscode-ripgrep"] {
             expect(ToolCaches.specs.contains { $0.relativePath == required },
                    "catalog covers \(required)")
+        }
+
+        // Scanner-managed caches are supported surface too: the generated docs
+        // must document uv/npm/pnpm/bun, or users read the catalog as the whole
+        // story and report "uv missing".
+        expect(ScannerCaches.entries.count >= 12, "scanner-managed caches are documented")
+        for scanner in ["uv", "npm", "pnpm", "bun", "Docker", "Homebrew", "MacPorts"] {
+            expect(ScannerCaches.entries.contains { $0.titleEn == scanner },
+                   "scanner list documents \(scanner)")
+        }
+        let generated = toolTableMarkdown()
+        expect(generated.contains("### Also cleaned by dedicated scanners"),
+               "generated README section names the scanner-managed caches")
+        expect(generated.contains("| uv |"), "generated README documents uv")
+
+        // Wildcard specs: versioned caches such as ~/.gem/ruby/*/cache.
+        expect(Glob.matches("*.0", "2.6.0"), "glob suffix match")
+        expect(Glob.matches("v1*", "v11"), "glob prefix match")
+        expect(Glob.matches("v*", "v10"), "glob matches any version")
+        expect(!Glob.matches("v1*", "v20"), "glob rejects a different version")
+        let gemSpec = ToolCaches.specs.first { $0.relativePath == ".gem/ruby/*/cache" }
+        expect(gemSpec?.isPattern == true, "gem cache is a pattern spec")
+        if FileManager.default.fileExists(atPath: home + "/.gem/ruby"),
+           let gemSpec {
+            let matched = gemSpec.matchingURLs()
+            print("gem pattern matched: \(matched.map(\.path))")
+            expect(!matched.isEmpty, "gem pattern expands on this machine")
+            expect(matched.allSatisfy { Cleaner.isAllowed($0) },
+                   "every expanded gem cache passes the allowlist")
+        }
+        for newest in [".rustup/downloads", ".julia/compiled",
+                       "Library/Caches/typescript", ".cache/sccache",
+                       ".oh-my-zsh/cache", ".gem/specs", ".kube/http-cache",
+                       "Library/Caches/Google/AndroidStudio*", ".minikube/cache",
+                       ".nv/ComputeCache", ".triton/cache", ".cache/jax"] {
+            expect(ToolCaches.specs.contains { $0.relativePath == newest },
+                   "catalog covers \(newest)")
         }
 
         // Installed CLIs must be supported: no silent holes.
@@ -356,6 +393,16 @@ enum SelfTest {
             }
             lines.append("")
         }
+        lines.append("")
+        lines.append("### Also cleaned by dedicated scanners")
+        lines.append("")
+        lines.append("These caches need a tool's own command or runtime state, so a scanner handles them instead of a path spec. They are part of what the app supports.")
+        lines.append("")
+        lines.append("| Tool | Paths | How |")
+        lines.append("| --- | --- | --- |")
+        for entry in ScannerCaches.entries {
+            lines.append("| \(entry.titleEn) | `\(entry.pathsEn)` | \(entry.howEn) |")
+        }
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -372,6 +419,11 @@ enum SelfTest {
                 let cls = spec.advanced ? "advanced" : "safe    "
                 lines.append("  [\(cls)] \(spec.titleEn)  \(spec.displayPath)")
             }
+        }
+        lines.append("")
+        lines.append("Also cleaned by dedicated scanners:")
+        for entry in ScannerCaches.entries {
+            lines.append("  \(entry.titleEn): \(entry.pathsEn) — \(entry.howEn)")
         }
         return lines.joined(separator: "\n")
     }

@@ -28,7 +28,7 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
 
 ## Rules that bite
 
-- **The catalog is the product** (108 caches in 7 disciplines as of 1.5.0: web,
+- **The catalog is the product** (142 caches in 7 disciplines as of 1.5.1: web,
   mobile, desktop, embedded, cloud, Web3, data/ML). A new cache is one
   `make(...)` entry in `ToolCaches.specs` (`Sources/Models.swift`); it
   automatically drives scanning, the allowlist, the preview, the UI grouping and
@@ -60,6 +60,29 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
   SF Symbol + tint; when the tool ships a GUI app the real macOS icon is used
   via its bundle id. `--self-test` fails on an uncurated spec or a missing SF
   Symbol on the running macOS (e.g. `hardhat.fill` does not exist on macOS 13).
+- **Scanner-managed caches are documented too.** `ScannerCaches.entries` (npm,
+  pnpm, bun, uv, Docker, Homebrew, MacPorts, IntelliJ, nvim/jdtls, Telegram,
+  WhatsApp, simulators, /private/tmp) is rendered into the README's "Also cleaned
+  by dedicated scanners" section; a path spec would be wrong for them (commands,
+  runtime checks, versioned stores). Omitting them made users read the catalog as
+  the whole story and report "uv missing".
+- **Wildcards are supported but narrow**: `~/.gem/ruby/*/cache` expands to one
+  row per installed version; the allowlist opens the pattern's parent, the row's
+  concrete path is what gets deleted, and the row title carries the version.
+- **A catalog entry that can never exist on macOS is noise.** Three Linux-only
+  paths (`.cache/deno`, `.cache/yarn`, `.cache/parcel`) were removed after the
+  audit; do not add XDG paths to a macOS app unless the tool really uses them
+  here (`.rustup`, `.gem`, `.julia`, `.sccache` are cross-platform, `.cache/uv`
+  is scanner-managed because the path exists on macOS too).
+- **Project-local caches are never cleaned**: `.next/cache`, `.angular/cache`,
+  `.turbo`, `node_modules/.cache/*`, `_build`, `target`, `var/cache`,
+  `storage/framework`, Godot's `.godot` live inside repositories. Cleaning them
+  would delete a build state the user may be mid-way through; keep them out of
+  the catalog and say so in the README.
+- **pnpm stores are versioned**: `pnpm store path` names the current store; other
+  version dirs under `~/Library/pnpm/store` are unreachable and can be removed
+  (4.7 GB of v11 next to a 1.0 GB v10 on this Mac). They are separate rows with
+  an `advanced`-style warning, not part of `pnpm store prune`.
 - **Installed-but-unsupported is a bug, not a surprise.** `ToolCoverage` lists
   every CLI known to be worth detecting; `--self-test` fails when one installed
   here maps to neither the catalog nor a dedicated scanner. When a user says

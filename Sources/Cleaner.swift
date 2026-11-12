@@ -40,11 +40,17 @@ enum Cleaner {
             home.appendingPathComponent("Library/Caches/ru.keepcoder.Telegram"),
             home.appendingPathComponent("Library/Containers/ru.keepcoder.Telegram.TelegramShare/Data/Library/Caches"),
             home.appendingPathComponent("Library/Containers/net.whatsapp.WhatsApp/Data/Library/Caches"),
+            // pnpm stores are versioned directories; the scanner removes stale
+            // versions (not the one `pnpm store path` reports).
+            home.appendingPathComponent("Library/pnpm/store"),
+            home.appendingPathComponent(".local/share/pnpm/store"),
         ]
 
         let manager = FileManager.default
         for spec in ToolCaches.specs {
-            bases.append(spec.url)
+            // A pattern spec (`~/.gem/ruby/*/cache`) opens up its parent; the
+            // concrete matched path is what actually gets deleted.
+            bases.append(spec.isPattern ? spec.patternBaseURL : spec.url)
         }
 
         if let accounts = try? manager.contentsOfDirectory(at: telegramStable, includingPropertiesForKeys: nil) {

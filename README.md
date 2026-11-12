@@ -17,7 +17,7 @@ telemetry, no network access.
 
 ## Download
 
-Grab `DevSweep-1.5.0.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
+Grab `DevSweep-1.5.1.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
 unzip it and open `DevSweep.app`. The bundle is ad-hoc signed, so on first launch
 macOS may ask you to confirm with right-click → Open. Release notes live in
 [CHANGELOG.md](CHANGELOG.md); the running version is shown in the window and in
@@ -26,7 +26,7 @@ the footer link.
 ## Why it is different from other disk cleaners
 
 - **Built for developers, not for "junk".** A generic cleaner cannot tell a
-  Gradle cache from a project. DevSweep ships a catalog of **108 toolchain
+  Gradle cache from a project. DevSweep ships a catalog of **142 toolchain
   caches** and treats each one with the right tool: `npm cache clean --force`,
   `uv cache clean --force`, `go clean -cache`, `pnpm store prune`, Docker
   `builder prune --filter until=24h`, and plain allowlisted directory removal
@@ -77,12 +77,16 @@ rebuilt, slower.
 | Prisma: engines and cache | `~/.cache/prisma` | safe |
 | Firebase CLI: cache | `~/.cache/firebase` | safe |
 | Deno: module cache | `~/Library/Caches/deno` | safe |
+| TypeScript: server cache | `~/Library/Caches/typescript` | safe |
 | Cypress: binaries and cache | `~/Library/Caches/Cypress` | safe |
 | Puppeteer: browsers | `~/.cache/puppeteer` | safe |
 | Selenium: drivers and browsers | `~/.cache/selenium` | safe |
 | Playwright: browsers | `~/Library/Caches/ms-playwright` | advanced |
 | PHP: Composer cache | `~/Library/Caches/composer` | safe |
 | Ruby: Bundler cache | `~/.bundle/cache` | safe |
+| Ruby: downloaded gem cache | `~/.gem/ruby/*/cache` | safe |
+| Ruby: gem metadata cache | `~/.gem/specs` | safe |
+| Ruby: RVM archives | `~/.rvm/archives` | advanced |
 | Elixir: Hex packages | `~/.hex/packages` | safe |
 | Erlang: rebar3 cache | `~/.cache/rebar3` | safe |
 
@@ -93,6 +97,7 @@ rebuilt, slower.
 | Gradle: dependency caches | `~/.gradle/caches` | advanced |
 | Gradle: wrapper distributions | `~/.gradle/wrapper/dists` | safe |
 | Android: SDK cache | `~/.android/cache` | safe |
+| Android Studio: IDE caches | `~/Library/Caches/Google/AndroidStudio*` | safe |
 | Android: system images | `~/Library/Android/sdk/system-images` | advanced |
 | CocoaPods: pod cache | `~/Library/Caches/CocoaPods` | safe |
 | CocoaPods: spec repositories | `~/.cocoapods/repos` | advanced |
@@ -103,11 +108,13 @@ rebuilt, slower.
 | Xcode: iOS DeviceSupport | `~/Library/Developer/Xcode/iOS DeviceSupport` | advanced |
 | Xcode: Previews | `~/Library/Developer/Xcode/UserData/Previews` | advanced |
 | CoreSimulator: caches | `~/Library/Developer/CoreSimulator/Caches` | safe |
+| Xcode: IDE caches | `~/Library/Caches/com.apple.dt.Xcode` | advanced |
 
 ### Desktop & native
 
 | Tool | Cache path | Class |
 | --- | --- | --- |
+| Rust: registry index | `~/.cargo/registry/index` | safe |
 | Rust: crates cache | `~/.cargo/registry/cache` | safe |
 | Rust: extracted crate sources | `~/.cargo/registry/src` | safe |
 | Rust: git dependencies | `~/.cargo/git` | advanced |
@@ -126,15 +133,27 @@ rebuilt, slower.
 | Electron: downloaded versions | `~/Library/Caches/electron` | safe |
 | electron-builder: cache | `~/Library/Caches/electron-builder` | safe |
 | Unity: package cache | `~/Library/Unity/cache` | safe |
+| Godot: export templates | `~/Library/Application Support/Godot/export_templates` | advanced |
 | Unreal Engine: DerivedDataCache | `~/Library/Application Support/Epic/UnrealEngine/Common/DerivedDataCache` | advanced |
 | Zig: cache | `~/.cache/zig` | safe |
+| Rust: sccache | `~/.cache/sccache` | safe |
+| Rust: downloaded toolchains | `~/.rustup/downloads` | safe |
+| Rust: rustup temp files | `~/.rustup/tmp` | safe |
 | VS Code: ripgrep cache | `~/.cache/vscode-ripgrep` | safe |
 | GitHub Copilot: cache | `~/.cache/github-copilot` | safe |
 | VS Code: cache | `~/Library/Application Support/Code/Cache` | safe |
 | VS Code: cached data | `~/Library/Application Support/Code/CachedData` | safe |
+| VS Code: GPU cache | `~/Library/Application Support/Code/GPUCache` | safe |
+| VS Code: cached extension VSIX | `~/Library/Application Support/Code/CachedExtensionVSIXs` | safe |
 | VS Code Insiders: cache | `~/Library/Application Support/Code - Insiders/Cache` | safe |
 | Cursor: cache | `~/Library/Application Support/Cursor/Cache` | safe |
 | Cursor: cached data | `~/Library/Application Support/Cursor/CachedData` | safe |
+| Cursor: GPU cache | `~/Library/Application Support/Cursor/GPUCache` | safe |
+| Windsurf: cache | `~/Library/Application Support/Windsurf/Cache` | safe |
+| Windsurf: cached data | `~/Library/Application Support/Windsurf/CachedData` | safe |
+| Antigravity: cache | `~/Library/Application Support/Antigravity/Cache` | safe |
+| Antigravity: cached data | `~/Library/Application Support/Antigravity/CachedData` | safe |
+| Zed: editor cache | `~/Library/Caches/Zed` | safe |
 
 ### Embedded
 
@@ -169,6 +188,10 @@ rebuilt, slower.
 | GitHub CLI: cache | `~/.cache/gh` | safe |
 | Helm: chart cache | `~/Library/Caches/helm/repository` | safe |
 | kubectl: discovery cache | `~/.kube/cache` | safe |
+| kubectl: HTTP cache | `~/.kube/http-cache` | safe |
+| minikube: cached images and binaries | `~/.minikube/cache` | safe |
+| Ansible: temp files | `~/.ansible/tmp` | safe |
+| Vagrant: downloaded boxes | `~/.vagrant.d/boxes` | advanced |
 
 ### Web3 & blockchain
 
@@ -194,18 +217,50 @@ rebuilt, slower.
 | Conda: packages (miniforge3) | `~/miniforge3/pkgs` | advanced |
 | Conda: packages (/opt/miniconda3) | `/opt/miniconda3/pkgs` | advanced |
 | Conda: packages (/opt/anaconda3) | `/opt/anaconda3/pkgs` | advanced |
+| JAX: compilation cache | `~/.cache/jax` | safe |
+| Keras: downloaded models | `~/.keras` | advanced |
+| CUDA: compute cache | `~/.nv/ComputeCache` | safe |
+| Triton: kernel cache | `~/.triton/cache` | safe |
+| Jupyter: cache | `~/.cache/jupyter` | safe |
+| Hugging Face: datasets | `~/.cache/huggingface/datasets` | advanced |
 | Hugging Face: models | `~/.cache/huggingface` | advanced |
 | Ollama: models | `~/.ollama/models` | advanced |
 | LM Studio: models | `~/.lmstudio/models` | advanced |
 | PyTorch: model cache | `~/.cache/torch` | advanced |
+| Julia: compiled code | `~/.julia/compiled` | safe |
+| Julia: packages | `~/.julia/packages` | advanced |
+| Oh My Zsh: plugin cache | `~/.oh-my-zsh/cache` | safe |
 | Whisper: models | `~/.cache/whisper` | advanced |
 | JVM: Coursier cache | `~/Library/Caches/Coursier/v1` | safe |
-| Scala: sbt boot | `~/.sbt/boot` | safe |
-| Scala/Java: ivy cache | `~/.ivy2/cache` | safe |
-| Maven: local repository | `~/.m2/repository` | advanced |
+| JVM: sbt boot (Spark, Scala) | `~/.sbt/boot` | safe |
+| JVM: sbt launchers | `~/.sbt/launchers` | advanced |
+| Gradle: daemon logs and state | `~/.gradle/daemon` | safe |
+| JVM: Ivy cache (sbt, Spark) | `~/.ivy2/cache` | safe |
+| JVM: Maven local repo (Java, Spark) | `~/.m2/repository` | advanced |
 | Nix: cache | `~/.cache/nix` | safe |
 | Scala/Java: ivy jars | `~/.ivy2/jars` | advanced |
 | pkg: binary cache | `~/.cache/pkg` | safe |
+
+
+### Also cleaned by dedicated scanners
+
+These caches need a tool's own command or runtime state, so a scanner handles them instead of a path spec. They are part of what the app supports.
+
+| Tool | Paths | How |
+| --- | --- | --- |
+| npm | `~/.npm/_cacache` | npm cache clean --force |
+| pnpm | `~/Library/pnpm/store/v*, ~/.local/share/pnpm/store/v*` | pnpm store prune + removal of stale store versions |
+| bun | `~/.bun/install/cache` | bun pm cache rm |
+| uv | `~/.cache/uv` | uv cache clean --force |
+| Docker | `build cache, dangling images` | docker builder prune --filter until=24h; docker image prune -f |
+| Homebrew | `~/Library/Caches/Homebrew` | brew cleanup -s --prune=all |
+| MacPorts | `/opt/local/var/macports/build, distfiles` | port -q clean --all installed (asks for the admin password) |
+| IntelliJ IDEA | `~/Library/Caches/JetBrains/IntelliJIdea*` | removes caches of versions that are not installed |
+| nvim / jdtls | `~/.cache/nvim/jdtls` | remove |
+| Telegram | `per-account media cache` | remove; messages stay |
+| WhatsApp | `MediaCache and network cache` | remove; messages stay |
+| iOS simulators | `simulators missing from Xcode` | xcrun simctl delete unavailable |
+| /private/tmp | `scratch older than 14 days` | remove |
 
 <!-- tools:end -->
 

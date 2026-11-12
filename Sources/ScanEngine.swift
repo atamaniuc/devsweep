@@ -319,32 +319,55 @@ enum ScanEngine {
         guard commandExists("pnpm") else {
             return ([], [ScanNote(category: .pnpm, text: L("pnpm не установлен", "pnpm is not installed"))])
         }
-        // `pnpm store path` depends on which pnpm binary the PATH resolves to
-        // and can name a version that no longer exists (v10 vs v11), so fall
-        // back to the store directories that are actually on disk.
-        var candidates: [URL] = []
+        // `pnpm store path` names the store the current binary uses. Every other
+        // version directory under the store root is unreachable for this pnpm:
+        // on this Mac v11 holds 4.7 GB while pnpm 10 uses v10.
         let result = Shell.login("pnpm store path")
         let storePath = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        if result.status == 0, !storePath.isEmpty {
-            candidates.append(URL(fileURLWithPath: storePath))
-        }
+        let currentStore = result.status == 0 && !storePath.isEmpty
+            ? URL(fileURLWithPath: storePath).resolvingSymlinksInPath()
+            : nil
+
         let manager = FileManager.default
+        var versions: [URL] = []
         for root in [home.appendingPathComponent("Library/pnpm/store"),
                      home.appendingPathComponent(".local/share/pnpm/store")] {
-            if let versions = try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
-                candidates.append(contentsOf: versions.sorted { versionLess($0.lastPathComponent, $1.lastPathComponent) })
+            if let entries = try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+                versions.append(contentsOf: entries.sorted {
+                    versionLess($0.lastPathComponent, $1.lastPathComponent)
+                })
             }
         }
-        guard let store = candidates.first(where: { Disk.exists($0) }) else {
+        let stale = versions.filter { url in
+            Disk.exists(url) && url.resolvingSymlinksInPath() != currentStore
+        }
+
+        var items: [CleanupItem] = []
+        if let store = currentStore, Disk.exists(store) {
+            items.append(CleanupItem(category: .pnpm,
+                                     title: L("pnpm store без ссылок", "pnpm store without references"),
+                                     detail: "pnpm store prune • \(store.path)",
+                                     sizeBytes: Disk.sizeOnDisk(store),
+                                     action: .command("pnpm-store-prune"),
+                                     previewPath: store))
+        }
+        for url in stale {
+            let size = Disk.sizeOnDisk(url)
+            guard size > 0 else { continue }
+            items.append(CleanupItem(category: .pnpm,
+                                     title: L("pnpm: старый store \(url.lastPathComponent)",
+                                              "pnpm: stale store \(url.lastPathComponent)"),
+                                     detail: url.path,
+                                     sizeBytes: size,
+                                     action: .remove(url),
+                                     warning: L("Текущий pnpm использует другой store; вернётесь на старую версию — пакеты скачаются заново",
+                                                "The current pnpm uses another store; downgrading re-downloads the packages"),
+                                     previewPath: url))
+        }
+        if items.isEmpty {
             return ([], [ScanNote(category: .pnpm, text: L("store не найден на диске", "store not found on disk"))])
         }
-        let item = CleanupItem(category: .pnpm,
-                               title: L("pnpm store без ссылок", "pnpm store without references"),
-                               detail: "pnpm store prune • \(store.path)",
-                               sizeBytes: Disk.sizeOnDisk(store),
-                               action: .command("pnpm-store-prune"),
-                               previewPath: store)
-        return ([item], [])
+        return (items, [])
     }
 
     static func scanBun() -> ([CleanupItem], [ScanNote]) {
@@ -484,16 +507,24 @@ enum ScanEngine {
 
     static func scanDevtools() -> ([CleanupItem], [ScanNote]) {
         let specs = ToolCaches.specs
-        var sizes = [Int64](repeating: 0, count: specs.count)
+
+        // A spec may be a pattern (`~/.gem/ruby/*/cache`): expand it first so
+        // each concrete cache becomes its own row.
+        var entries: [(spec: ToolCacheSpec, url: URL)] = []
+        for spec in specs {
+            for url in spec.matchingURLs() where Disk.exists(url) {
+                entries.append((spec, url))
+            }
+        }
+
+        var sizes = [Int64](repeating: 0, count: entries.count)
         let lock = NSLock()
         let group = DispatchGroup()
 
-        for (index, spec) in specs.enumerated() {
-            let url = spec.url
-            guard Disk.exists(url) else { continue }
+        for (index, entry) in entries.enumerated() {
             group.enter()
             DispatchQueue.global(qos: .utility).async {
-                let size = Disk.sizeOnDisk(url)
+                let size = Disk.sizeOnDisk(entry.url)
                 lock.lock()
                 sizes[index] = size
                 lock.unlock()
@@ -503,15 +534,21 @@ enum ScanEngine {
         group.wait()
 
         var items: [CleanupItem] = []
-        for (index, spec) in specs.enumerated() {
+        for (index, entry) in entries.enumerated() {
+            let spec = entry.spec
             let size = sizes[index]
             guard size > 0 else { continue }
-            let url = spec.url
+            let url = entry.url
+            // Pattern rows name the version they belong to: three Ruby versions
+            // should not produce three identical titles.
+            let versionSuffix = spec.isPattern
+                ? " (\(url.deletingLastPathComponent().lastPathComponent))"
+                : ""
             let category: CleanupCategory = spec.advanced ? .devtoolsAdvanced : .devtools
             let action: CleanupAction = spec.commandID.map { .command($0) } ?? .remove(url)
             let warning = spec.warningRu.map { L($0, spec.warningEn ?? $0) }
             items.append(CleanupItem(category: category,
-                                     title: L(spec.titleRu, spec.titleEn),
+                                     title: L(spec.titleRu, spec.titleEn) + versionSuffix,
                                      detail: url.path,
                                      sizeBytes: size,
                                      action: action,
