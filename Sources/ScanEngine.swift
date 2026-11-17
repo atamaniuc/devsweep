@@ -284,7 +284,8 @@ enum ScanEngine {
                                title: L("Кэш IntelliJ IDEA \(ver)", "IntelliJ IDEA \(ver) cache"),
                                detail: L("версия \(ver) не установлена • \(url.path)", "version \(ver) is not installed • \(url.path)"),
                                sizeBytes: Disk.sizeOnDisk(url),
-                               action: .remove(url))
+                               action: .remove(url),
+                               keywords: ["intellij", "jetbrains", "idea"])
         }
         return (items, notes)
     }
@@ -311,7 +312,8 @@ enum ScanEngine {
                                detail: cache.path,
                                sizeBytes: Disk.sizeOnDisk(cache),
                                action: .command("npm-cache-clean"),
-                               previewPath: cache)
+                               previewPath: cache,
+                               keywords: ["npm", "npm cache", "cacache"])
         return ([item], [])
     }
 
@@ -349,7 +351,8 @@ enum ScanEngine {
                                      detail: "pnpm store prune • \(store.path)",
                                      sizeBytes: Disk.sizeOnDisk(store),
                                      action: .command("pnpm-store-prune"),
-                                     previewPath: store))
+                                     previewPath: store,
+                                     keywords: ["pnpm", "pnpm store", "store prune"]))
         }
         for url in stale {
             let size = Disk.sizeOnDisk(url)
@@ -362,7 +365,8 @@ enum ScanEngine {
                                      action: .remove(url),
                                      warning: L("Текущий pnpm использует другой store; вернётесь на старую версию — пакеты скачаются заново",
                                                 "The current pnpm uses another store; downgrading re-downloads the packages"),
-                                     previewPath: url))
+                                     previewPath: url,
+                                     keywords: ["pnpm", "pnpm store", "stale store"]))
         }
         if items.isEmpty {
             return ([], [ScanNote(category: .pnpm, text: L("store не найден на диске", "store not found on disk"))])
@@ -384,7 +388,8 @@ enum ScanEngine {
                                detail: detail,
                                sizeBytes: size,
                                action: action,
-                               previewPath: cache)
+                               previewPath: cache,
+                               keywords: ["bun", "bun cache", "bun pm cache"])
         return ([item], [])
     }
 
@@ -414,14 +419,18 @@ enum ScanEngine {
                                   detail: "docker builder prune --filter until=24h"
                                           + (builderText.isEmpty ? "" : L(" • можно освободить \(builderText)", " • reclaimable: \(builderText)")),
                                   sizeBytes: builderBytes,
-                                  action: .command("docker-builder-prune"))
+                                  action: .command("docker-builder-prune"),
+                                  keywords: ["docker", "docker build cache", "build cache",
+                                             "docker builder prune", "container"])
 
         let dangling = CleanupItem(category: .docker,
                                    title: L("Dangling-образы без тегов", "Dangling untagged images"),
                                    detail: L("docker image prune -f (без -a, без томов и контейнеров)", "docker image prune -f (no -a, no volumes, no containers)"),
                                    sizeBytes: 0,
                                    action: .command("docker-image-prune"),
-                                   warning: L("Образы, используемые контейнерами, не удаляются", "Images used by containers are never deleted"))
+                                   warning: L("Образы, используемые контейнерами, не удаляются", "Images used by containers are never deleted"),
+                                   keywords: ["docker", "docker images", "dangling images",
+                                              "untagged images"])
 
         var notes: [ScanNote] = []
         notes.append(ScanNote(category: .docker,
@@ -448,7 +457,8 @@ enum ScanEngine {
                                        + (cachePath.isEmpty ? "" : " • \(cachePath)"),
                                sizeBytes: size,
                                action: .command("brew-cleanup"),
-                               previewPath: cachePath.isEmpty ? nil : URL(fileURLWithPath: cachePath))
+                               previewPath: cachePath.isEmpty ? nil : URL(fileURLWithPath: cachePath),
+                               keywords: ["brew", "homebrew", "brew cleanup", "brew cache"])
         return ([item], [])
     }
 
@@ -467,7 +477,8 @@ enum ScanEngine {
                                sizeBytes: size,
                                action: .command("macports-clean"),
                                warning: L("Запустится с правами администратора: macOS спросит пароль", "Runs with administrator rights: macOS will ask for the password"),
-                               previewPath: build)
+                               previewPath: build,
+                               keywords: ["macports", "port", "port clean", "distfiles"])
         return ([item], [])
     }
 
@@ -487,7 +498,8 @@ enum ScanEngine {
                                      title: title,
                                      detail: url.path,
                                      sizeBytes: Disk.sizeOnDisk(url),
-                                     action: .remove(url)))
+                                     action: .remove(url),
+                                     keywords: ["nvim", "neovim", "jdtls", "java"]))
         }
 
         let uvCache = home.appendingPathComponent(".cache/uv")
@@ -498,7 +510,8 @@ enum ScanEngine {
                                      detail: hasUV ? "uv cache clean --force" : uvCache.path,
                                      sizeBytes: Disk.sizeOnDisk(uvCache),
                                      action: hasUV ? .command("uv-cache-clean") : .remove(uvCache),
-                                     previewPath: uvCache))
+                                     previewPath: uvCache,
+                                     keywords: ["uv", "uv cache", "python", "uv cache clean"]))
         }
         return (items, [])
     }
@@ -600,7 +613,9 @@ enum ScanEngine {
                                      detail: url.path,
                                      sizeBytes: size,
                                      action: .remove(url),
-                                     warning: L("Медиа перекачается при открытии чатов; переписка остаётся", "Media re-downloads when you open chats; messages stay")))
+                                     warning: L("Медиа перекачается при открытии чатов; переписка остаётся", "Media re-downloads when you open chats; messages stay"),
+                                     keywords: ["telegram", "telegram desktop", "telegram mac",
+                                                "media cache", "медиа", "telegram cache"]))
         }
         return (items, [])
     }
@@ -628,7 +643,9 @@ enum ScanEngine {
                                      detail: url.path,
                                      sizeBytes: size,
                                      action: .remove(url),
-                                     warning: L("MediaCache перекачается из чатов; сообщения не удаляются", "MediaCache re-downloads from chats; messages are not deleted")))
+                                     warning: L("MediaCache перекачается из чатов; сообщения не удаляются", "MediaCache re-downloads from chats; messages are not deleted"),
+                                     keywords: ["whatsapp", "whatsapp web", "whatsapp desktop",
+                                                "media cache", "whatsapp cache"]))
         }
         return (items, [])
     }
@@ -660,7 +677,8 @@ enum ScanEngine {
                                      detail: L("\(url.path) • изменён \(Self.dateFormatter.string(from: modified))", "\(url.path) • modified \(Self.dateFormatter.string(from: modified))"),
                                      sizeBytes: Disk.sizeOnDisk(url),
                                      action: .remove(url),
-                                     warning: L("Проверьте, что этот каталог не нужен запущенному процессу", "Make sure no running process needs this directory")))
+                                     warning: L("Проверьте, что этот каталог не нужен запущенному процессу", "Make sure no running process needs this directory"),
+                                     keywords: ["tmp", "temporary files", "scratch", "/private/tmp"]))
         }
         return (items, [])
     }
@@ -690,7 +708,8 @@ enum ScanEngine {
                                title: L("Недоступные симуляторы", "Unavailable simulators"),
                                detail: "xcrun simctl delete unavailable",
                                sizeBytes: 0,
-                               action: .command("simctl-delete-unavailable"))
+                               action: .command("simctl-delete-unavailable"),
+                               keywords: ["simulators", "ios simulators", "xcrun simctl", "xcode", "ios"])
         return ([item], [])
     }
 }
