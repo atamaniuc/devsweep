@@ -6,6 +6,10 @@ struct PreviewSheet: View {
 
     @State private var savedPath: String?
     @State private var saving = false
+    /// The sheet has its own sort choice, independent of the main window: the
+    /// dry-run plan is a report, and re-ordering it must not re-order the list
+    /// behind the sheet. Defaults to size descending, like the app.
+    @State private var sort = SortState()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -21,6 +25,9 @@ struct PreviewSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                // One compact control next to the total: the summary line below
+                // stays about counts and sizes.
+                SortPicker(sort: $sort)
                 Text(humanBytes(report.totalBytes))
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .monospacedDigit()
@@ -42,8 +49,8 @@ struct PreviewSheet: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(report.targets) { target in
-                        PreviewTargetRow(target: target)
+                    ForEach(sort.targets(report.targets)) { target in
+                        PreviewTargetRow(target: target, sort: $sort)
                     }
                 }
                 .padding(2)
@@ -108,10 +115,19 @@ struct PreviewSheet: View {
 /// files, instead of freezing while every list is built up front.
 private struct PreviewTargetRow: View {
     let target: PreviewTarget
+    @Binding var sort: SortState
 
     @State private var expanded = false
     @State private var scanning = false
+    /// Raw walk order. The sorted copy below is what the rows render, so a
+    /// 200,000-file target is sorted once (when the walk finishes or the sort
+    /// changes) instead of inside the SwiftUI body on every frame.
     @State private var scannedFiles: [PreviewFile] = []
+    @State private var sortedFiles: [PreviewFile] = []
+    @State private var resorting = false
+    /// Bumped on every re-sort so a slow background sort cannot overwrite the
+    /// result of a newer one when the user flips the sort twice quickly.
+    @State private var sortGeneration = 0
     @State private var scannedCount = 0
     @State private var scannedSize: Int64 = 0
     @State private var visibleLimit = 100
@@ -134,6 +150,11 @@ private struct PreviewTargetRow: View {
         .padding(11)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.07)))
+        // Re-sort the cached rows when the user changes the sort, never during
+        // the walk and never per drawn page.
+        .onChange(of: sort) { newSort in
+            resort(using: newSort)
+        }
     }
 
     private var effectiveCount: Int {
@@ -181,6 +202,37 @@ private struct PreviewTargetRow: View {
         .contentShape(Rectangle())
     }
 
+    /// The cached rows are sorted by name with `localizedStandardCompare`
+    /// (Finder order), which costs ~42 ms for 5,000 paths but ~3 s for 200,000:
+    /// small lists are sorted inline, big ones off the main thread so the sheet
+    /// stays responsive while the order is rebuilt.
+    private static let inlineSortLimit = 5_000
+
+    private func resort(using state: SortState) {
+        sortGeneration += 1
+        let generation = sortGeneration
+        let files = scannedFiles
+        guard !files.isEmpty else {
+            sortedFiles = []
+            resorting = false
+            return
+        }
+        guard files.count > Self.inlineSortLimit else {
+            sortedFiles = state.files(files)
+            resorting = false
+            return
+        }
+        resorting = true
+        Task { @MainActor in
+            let sorted = await Task.detached(priority: .userInitiated) {
+                state.files(files)
+            }.value
+            guard generation == sortGeneration else { return }
+            sortedFiles = sorted
+            resorting = false
+        }
+    }
+
     private func toggle() {
         expanded.toggle()
         guard expanded, !scanning, scannedCount == 0, scannedFiles.isEmpty,
@@ -192,6 +244,9 @@ private struct PreviewTargetRow: View {
                 PreviewBuilder.scanFiles(for: snapshot)
             }.value
             scannedFiles = result.files
+            // Read the binding, not a captured copy: the user may have changed
+            // the sort while the row was counting files.
+            resort(using: sort)
             scannedCount = result.count
             scannedSize = result.size
             scanning = false
@@ -220,8 +275,17 @@ private struct PreviewTargetRow: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         } else {
+            if resorting {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(L("сортирую \(scannedFiles.count) файлов…", "sorting \(scannedFiles.count) files…"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+            }
             LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(scannedFiles.prefix(visibleLimit)) { file in
+                ForEach(sortedFiles.prefix(visibleLimit)) { file in
                     HStack(spacing: 8) {
                         Text(file.path)
                             .font(.system(size: 11, design: .monospaced))
@@ -236,21 +300,21 @@ private struct PreviewTargetRow: View {
                 }
             }
 
-            if visibleLimit < scannedFiles.count {
+            if visibleLimit < sortedFiles.count {
                 HStack(spacing: 12) {
-                    Button(L("Показать ещё \(min(pageSize, scannedFiles.count - visibleLimit))",
-                             "Show \(min(pageSize, scannedFiles.count - visibleLimit)) more")) {
-                        visibleLimit = min(scannedFiles.count, visibleLimit + pageSize)
+                    Button(L("Показать ещё \(min(pageSize, sortedFiles.count - visibleLimit))",
+                             "Show \(min(pageSize, sortedFiles.count - visibleLimit)) more")) {
+                        visibleLimit = min(sortedFiles.count, visibleLimit + pageSize)
                     }
                     .font(.system(size: 12))
-                    Button(L("Показать первые \(min(2000, scannedFiles.count))",
-                             "Show the first \(min(2000, scannedFiles.count))")) {
-                        visibleLimit = min(2000, scannedFiles.count)
+                    Button(L("Показать первые \(min(2000, sortedFiles.count))",
+                             "Show the first \(min(2000, sortedFiles.count))")) {
+                        visibleLimit = min(2000, sortedFiles.count)
                     }
                     .font(.system(size: 12))
-                    .disabled(visibleLimit >= min(2000, scannedFiles.count))
-                    Text(L("… и ещё \(scannedFiles.count - visibleLimit) файлов — полный список сохраняется в отчёт",
-                           "… and \(scannedFiles.count - visibleLimit) more files — the full list goes into the saved report"))
+                    .disabled(visibleLimit >= min(2000, sortedFiles.count))
+                    Text(L("… и ещё \(sortedFiles.count - visibleLimit) файлов — полный список сохраняется в отчёт",
+                           "… and \(sortedFiles.count - visibleLimit) more files — the full list goes into the saved report"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
