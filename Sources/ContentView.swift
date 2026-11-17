@@ -275,7 +275,7 @@ struct ContentView: View {
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.1)))
             .frame(maxWidth: 500)
 
-            Text(model.isFiltering
+            Text(model.hasActiveFilters
                  ? L("найдено \(model.visibleItems.count) из \(model.items.count)",
                      "\(model.visibleItems.count) of \(model.items.count) shown")
                  : L("\(model.items.count) объектов", "\(model.items.count) items"))

@@ -6,6 +6,8 @@ struct PreviewSheet: View {
 
     @State private var savedPath: String?
     @State private var saving = false
+
+    private static let planTopID = "plan-top"
     /// The sheet has its own sort choice, independent of the main window: the
     /// dry-run plan is a report, and re-ordering it must not re-order the list
     /// behind the sheet. Defaults to size descending, like the app.
@@ -47,13 +49,27 @@ struct PreviewSheet: View {
             .font(.system(size: 12.5))
             .foregroundStyle(.secondary)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(sort.targets(report.targets)) { target in
-                        PreviewTargetRow(target: target, sort: $sort)
+            // The rows appear after the sheet animates in; an NSScrollView whose
+            // LazyVStack grows then keeps the bottom anchor, which opens the plan
+            // at its smallest rows. Scroll to the first row once the layout lands
+            // (the same fix as the main list).
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        Color.clear.frame(height: 0).id(Self.planTopID)
+                        ForEach(sort.targets(report.targets)) { target in
+                            PreviewTargetRow(target: target, sort: $sort)
+                        }
+                    }
+                    .padding(2)
+                }
+                .onAppear {
+                    for delay in [0.05, 0.3] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            proxy.scrollTo(Self.planTopID, anchor: .top)
+                        }
                     }
                 }
-                .padding(2)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 

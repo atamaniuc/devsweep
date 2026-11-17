@@ -105,3 +105,13 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
   contain private windows. Verify the image before committing it to `docs/`.
 - UI strings are localized through `L(ru, en)`; the UI follows the system
   language. Repository artifacts (README, CHANGELOG, docs) are English.
+
+## 1.6.0 (2026-11-17): sorting, chip filters, settings, search
+
+- Sorting is a pure in-memory transform (`Sources/Sorting.swift`): `SortState.items/targets/files` order indices, not values. `enumerated().sorted` copying `CleanupItem` (URL + strings + array) cost ~535 ms for 20k rows; sorting indices is ~8 ms. The main list is deliberately FLAT (no per-platform group headers) so the order is global, not per group — grouping lives only in the clickable chips.
+- `PlatformTag` (Models.swift) adds `.other` for rows with `platform == nil` (scanner-managed: npm/pnpm/uv/Docker/Telegram…), while `ToolPlatform.other` stays the catalog's Data/ML group for README backwards compatibility. Chip counts come from found rows (`PlatformFilter.stats`), not catalog counts.
+- The dry-run sheet sorts lazily: targets instantly, file lists via a cached sorted array (off-main above 5,000 rows with a generation counter; `PreviewBuilder.scanFiles` still walks on expansion only). A growing `LazyVStack` inside a sheet keeps the NSScrollView bottom anchor — scroll to a top marker on appear, same fix as the main list.
+- Search (`Sources/SearchIndex.swift`) matches rows, catalog specs, `ScannerCaches` entries and scan notes; fuzzy (edit distance / shared prefix) runs only when the exact pass returns nothing, so "whatsup" resolves to WhatsApp without loosening normal results.
+- Settings (`SettingsStore` + `SettingsView` + `DiskAlertMonitor`): `UserDefaults`-backed, injected store for tests (`UserDefaults(suiteName:)`), pure `DiskAlertRules.decide` with 10% hysteresis, NSAlert (no notification permission), `--disk-check` headless mode, optional LaunchAgent (never installed by self-test or at launch), view presets applied by `AppModel` at startup.
+- SwiftUI/AX verification on this Mac: `AXPress` silently does nothing on custom `Button` labels in a `Layout` (chips) — use `click element`. `AXValue` on a SwiftUI `TextField` updates the display but NOT the `@State` binding, so a Save button stays disabled; tab focus needs full keyboard access and is unreliable. Settings window is sometimes absent from the process's `windows` list; re-send ⌘, to make it key. Coordinate clicks drift when the window is on another Space — capture windows with `screencapture -x -l <CGWindowID>` (get ids from CGWindowListCopyWindowInfo), never full-screen.
+- Verified: `--self-test` 301 PASS / 0 FAIL; universal `x86_64 arm64`; `--audit` exit 0; `--disk-check` exit 0.

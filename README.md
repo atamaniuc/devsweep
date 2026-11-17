@@ -4,6 +4,8 @@
 
 ![DevSweep window](docs/screenshot.png)
 
+![Settings: low-disk alerts and view presets](docs/settings.png)
+
 DevSweep is a native macOS desktop app **for developers and engineers**, not a
 generic "clean your Mac" utility. Those know Downloads and Trash. DevSweep knows
 the regenerable caches that Rust, Gradle, Xcode, PlatformIO, Conda, Hugging Face
@@ -17,7 +19,7 @@ telemetry, no network access.
 
 ## Download
 
-Grab `DevSweep-1.5.1.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
+Grab `DevSweep-1.6.0.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
 unzip it and open `DevSweep.app`. The bundle is ad-hoc signed, so on first launch
 macOS may ask you to confirm with right-click → Open. Release notes live in
 [CHANGELOG.md](CHANGELOG.md); the running version is shown in the window and in
@@ -47,6 +49,29 @@ the footer link.
   **Check all / Uncheck all** act on what you can see, an instant search filters
   by tool, path or discipline, and the dry-run sheet opens immediately: file
   lists are counted per row when you expand it, not before.
+- **Sort without the grouping getting in the way.** The sort menu orders
+  *every* row — by size or by name, ascending or descending, across all
+  disciplines rather than inside each group — and one click on the arrow flips
+  the direction. The dry-run sheet carries the same control and sorts its
+  targets and their file lists too; sorts are pure in-memory work (20,000 rows
+  in ~8 ms) and a 200k-file name sort runs off the main thread instead of
+  freezing the sheet.
+- **The discipline tags are clickable filters.** The header shows what was
+  actually *found here* per group — Web, Mobile, Desktop, Embedded, Cloud,
+  Web3, Data/ML and **Other** for everything else (package managers, Docker,
+  messengers, temporary files) — and each chip toggles a filter: one chip
+  narrows the list, several chips union their groups, "All" clears it. Filtering
+  is one in-memory pass, so a click never touches the disk.
+- **Search that explains a miss.** Typing `telegram` or `whatsup` no longer ends
+  in "nothing matches": the app knows Telegram/WhatsApp are running (so their
+  cache is skipped), lists the dedicated scanners that manage npm, pnpm, bun, uv,
+  Docker, brew and MacPorts, understands typos, and names supported tools whose
+  cache is simply not on this Mac.
+- **Settings built in** (⌘,): low-disk alerts with a threshold, a check interval,
+  "open DevSweep when the alert fires", a real `NSAlert` (no notification
+  permission needed), an optional background launch agent that runs
+  `--disk-check`, and **view presets** — save the current chips + search +
+  switches + sort under a name and make one the view the app starts in.
 - **Brand icons, decimal units.** Every row carries its tool's identity — the
   real macOS app icon where the tool ships one (Docker, VS Code, Cursor, Xcode,
   Unity, Telegram), a brand-coloured SF Symbol otherwise — and sizes read in
@@ -325,6 +350,9 @@ bundle is ad-hoc signed and lives in `build/DevSweep.app`.
 
 # full dry-run report (the same list the preview sheet shows)
 ./build/DevSweep.app/Contents/MacOS/DevSweep --preview /tmp/devsweep-plan.txt
+
+# low-disk decision without a window; this is what the launch agent runs
+./build/DevSweep.app/Contents/MacOS/DevSweep --disk-check
 ```
 
 `--self-test` runs no destructive action against real caches; its delete check

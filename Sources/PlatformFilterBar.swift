@@ -79,9 +79,14 @@ private struct ChipButton: View {
                 Text(title)
                     .font(.system(size: 12.5, weight: active ? .bold : .medium))
                     .lineLimit(1)
+                    .fixedSize()
                 Text("\(count)")
                     .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    // Without fixedSize the badge text is the first thing the
+                    // label compresses, and a chip showed "…" instead of "37".
+                    .fixedSize()
                     .padding(.horizontal, 5)
                     .padding(.vertical, 0.5)
                     .background(Capsule().fill(badgeFill))
@@ -122,7 +127,10 @@ private struct ChipButton: View {
     }
 
     private var badgeFill: Color {
-        active ? Color.white.opacity(0.24) : Color.secondary.opacity(0.13)
+        // On an active chip the badge sits on the accent fill: a white overlay
+        // there made the white count nearly invisible, so the pill darkens the
+        // accent instead.
+        active ? Color.black.opacity(0.18) : Color.secondary.opacity(0.13)
     }
 }
 

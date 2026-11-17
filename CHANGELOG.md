@@ -1,5 +1,76 @@
 # Changelog
 
+## 1.6.0 — 2026-11-17
+
+The window becomes a real control panel: sort it, filter it with the discipline
+tags, search everything the app knows, and configure low-disk alerts and presets
+in a proper Settings window.
+
+### Added — sorting
+
+- **Asc/desc by size or name**, in the main window and in the dry-run sheet.
+  Sorting ignores the discipline grouping: rows are one flat, globally sorted
+  list (Safe and Advanced stay separate sections because the risk separation is
+  not a category). One click on the arrow flips the direction.
+- Sorting is a pure in-memory operation over the scan result. It was measured
+  at 8.4 ms for 20,000 rows after switching the comparator to sort indices
+  instead of copying whole `CleanupItem` values (~535 ms before); the dry-run
+  sheet sorts its targets instantly and its file lists through a cached sort
+  (off the main thread above 5,000 rows, so a 200k-file name sort cannot freeze
+  the sheet).
+- The plan opens at the top of the list again: a growing `LazyVStack` in the
+  sheet kept the bottom anchor and opened "Show plan" at its smallest rows.
+
+### Added — clickable discipline chips
+
+- The header tags now count what was **found here** and are filters: Web,
+  Mobile, Desktop, Embedded, Cloud, Web3, Data/ML and the new **Other**
+  catch-all for rows without a discipline (npm, pnpm, bun, uv, Docker, brew,
+  MacPorts, IntelliJ, Telegram, WhatsApp, temporary files). Chips are
+  multi-select (union), "All" clears, zero-row chips stay visible and dimmed,
+  counts are one O(n) pass and filtering never touches the disk. The row wraps
+  to two balanced rows at the 940 pt minimum width.
+- The search counter says "N of M shown" when a chip filter is active, not only
+  when the search box is used.
+
+### Added — search covers everything the app knows
+
+- Dedicated-scanner rows carry keywords, so `uv`, `docker`, `brew`, `pnpm` and
+  friends find them.
+- `ScannerCaches` entries are searchable, and scan **notes** are too: searching
+  `telegram` / `whatsapp` now answers with "Telegram is running — quit it to
+  clean the media cache" instead of "nothing matches".
+- A fuzzy fallback runs only when the exact pass finds nothing (edit distance
+  for tokens of 5+ characters, a 4-character shared prefix otherwise), so
+  `whatsup` finds WhatsApp; exact results never get looser. 20,000 rows filter
+  in ~33 ms.
+
+### Added — Settings (⌘,)
+
+- **Low-disk alerts**: enable, threshold slider (1–100 GB), check interval
+  (5/15/30/60 min), "open DevSweep when the alert fires", a real `NSAlert` with
+  free space, threshold and what the current selection could free, and a
+  Test alert button. Hysteresis re-arms only after free space rises 10% above
+  the threshold, so the alert does not repeat every tick.
+- **Background checks**: an optional launch agent
+  (`~/Library/LaunchAgents/com.atamaniuc.devsweep.alert.plist`) runs the app
+  with `--disk-check`; nothing is installed unless the user flips the toggle.
+- **View presets**: save the current chips + search + advanced/dry-run switches
+  + sort under a name, apply any preset, and pick the default that the app
+  restores on launch.
+- Settings persist immediately in `UserDefaults` and the alert monitor re-reads
+  them every tick, so changes take effect without relaunching.
+
+### Verification
+
+- `--self-test`: **301 PASS, 0 FAIL** (was 153), including 33 sort checks,
+  27 chip checks, 40 search checks and 47 settings checks; sort 20k in 8.4 ms,
+  search 20k in ~33 ms, chip stats/apply 20k in ~7 ms.
+- `--disk-check` prints the decision and exits 0 (`alerts=off decision=disabled`
+  on a clean install).
+- Universal release: `x86_64 arm64`, `--audit` exit 0, README tool table
+  matches the compiled catalog.
+
 ## 1.5.1 — 2026-11-13
 
 The catalog grows to **142 caches** and the docs stop hiding the ones a scanner
