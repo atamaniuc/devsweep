@@ -19,7 +19,7 @@ telemetry, no network access.
 
 ## Download
 
-Grab `DevSweep-1.6.1.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
+Grab `DevSweep-1.6.2.zip` from the [latest release](https://github.com/atamaniuc/devsweep/releases/latest),
 unzip it and open `DevSweep.app`. The bundle is ad-hoc signed, so on first launch
 macOS may ask you to confirm with right-click → Open. Release notes live in
 [CHANGELOG.md](CHANGELOG.md); the running version is shown in the window and in

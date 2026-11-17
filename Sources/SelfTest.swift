@@ -47,6 +47,36 @@ enum SelfTest {
         expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/.npm/_cacache/x")), "allow npm child")
         expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/Library/Caches/Homebrew")), "allow brew cache")
         expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/Library/Containers/net.whatsapp.WhatsApp/Data/Library/Caches")), "allow WhatsApp cache")
+        let whatsappMedia = home + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media"
+        expect(Cleaner.isAllowed(URL(fileURLWithPath: whatsappMedia)), "allow WhatsApp downloaded media")
+        expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared")),
+               "refuse the WhatsApp shared container root")
+        expect(ScanEngine.whatsappMediaPaths().map(\.path) == [whatsappMedia],
+               "WhatsApp media scanner points at the shared container Message/Media")
+        if FileManager.default.fileExists(atPath: whatsappMedia) {
+            let mediaSize = Disk.sizeOnDisk(URL(fileURLWithPath: whatsappMedia))
+            print("WhatsApp media: \(humanBytes(mediaSize)) at \(whatsappMedia)")
+            expect(mediaSize > 0, "WhatsApp media path is measured on this machine")
+        }
+        // The media row must be produced when WhatsApp is closed; the builder is
+        // independent of the running-app check, so this is testable right now.
+        let whatsappRows = ScanEngine.whatsappItems(
+            caches: ScanEngine.whatsappCachePaths().filter { Disk.exists($0) },
+            media: ScanEngine.whatsappMediaPaths().filter { Disk.exists($0) })
+        print("whatsapp rows: \(whatsappRows.map { "\($0.title) \(humanBytes($0.sizeBytes))" })")
+        func removedPath(_ item: CleanupItem) -> String? {
+            if case let .remove(url) = item.action { return url.path }
+            return nil
+        }
+        if FileManager.default.fileExists(atPath: whatsappMedia) {
+            expect(whatsappRows.contains { removedPath($0) == whatsappMedia && $0.sizeBytes > 0 },
+                   "WhatsApp media becomes a removable row when the app is closed")
+            expect(whatsappRows.allSatisfy { row in
+                       guard let path = removedPath(row) else { return false }
+                       return Cleaner.isAllowed(URL(fileURLWithPath: path))
+                   },
+                   "every WhatsApp row passes the deletion allowlist")
+        }
         expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/Library/Containers/net.whatsapp.WhatsApp/Data/Library")), "refuse WhatsApp Library root")
         expect(!Cleaner.isAllowed(URL(fileURLWithPath: home + "/Library/Group Containers/6N38VWS5BX.ru.keepcoder.Telegram/stable")), "refuse Telegram group container root")
         expect(Cleaner.isAllowed(URL(fileURLWithPath: home + "/.cargo/registry/cache")), "allow cargo registry cache")

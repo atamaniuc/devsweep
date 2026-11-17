@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.6.2 — 2026-11-17
+
+WhatsApp (and Telegram) are now actually detected, including the media that
+WhatsApp 26.x keeps outside the app container.
+
+### Fixed
+
+- **WhatsApp 26.x media was invisible.** The scanner looked at
+  `~/Library/Containers/net.whatsapp.WhatsApp/Data/Library/Caches` (360 KB here)
+  while downloaded chat media lives in the shared group container:
+  `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media`
+  (149 MB here). That path is now scanned as its own advanced row ("WhatsApp
+  media: photos and videos") and is explicitly opened in the deletion
+  allowlist — only `Message/Media`, never the container root that holds the
+  message database.
+- **"Not detected" while the app was running.** The messenger scanners used to
+  return no rows at all when Telegram/WhatsApp were open; searching for them
+  showed only a note and the app looked unsupported. Both now always return
+  their rows, each carrying a "quit it before cleaning" warning plus the
+  explanatory note. Verified with both apps running on this Mac:
+  `whatsapp 149114880 WhatsApp media: photos and videos`,
+  `whatsapp 368640 WhatsApp cache`, `telegram 4250955776 Telegram media cache`.
+
+### Verification
+
+- `--self-test`: 311 PASS, 0 FAIL. New checks: the media path is measured on
+  this machine (149 MB), becomes a removable row, passes the allowlist, and the
+  shared container root is refused; scan notes still match which app really runs.
+- `--scan` prints the WhatsApp rows while WhatsApp is running.
+
 ## 1.6.1 — 2026-11-17
 
 A search for a messenger must not claim the app is running when it is not.

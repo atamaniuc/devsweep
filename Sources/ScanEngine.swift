@@ -605,10 +605,10 @@ enum ScanEngine {
             return ([], [ScanNote(category: .telegram,
                                   text: L("Telegram не найден или кэш пуст", "Telegram not found or its cache is empty"))])
         }
-        if processRunning("Telegram") {
-            return ([], [ScanNote(category: .telegram,
-                                  text: L("Telegram запущена — закройте её, чтобы очистить медиа-кэш", "Telegram is running — quit it to clean the media cache"))])
-        }
+        let running = processRunning("Telegram")
+        let runningHint = running
+            ? L(" • Telegram запущена: закройте её перед очисткой", " • Telegram is running: quit it before cleaning")
+            : ""
         var items: [CleanupItem] = []
         for url in existing {
             let size = Disk.sizeOnDisk(url)
@@ -618,7 +618,7 @@ enum ScanEngine {
                                      detail: url.path,
                                      sizeBytes: size,
                                      action: .remove(url),
-                                     warning: L("Медиа перекачается при открытии чатов; переписка остаётся", "Media re-downloads when you open chats; messages stay"),
+                                     warning: L("Медиа перекачается при открытии чатов; переписка остаётся", "Media re-downloads when you open chats; messages stay") + runningHint,
                                      keywords: ["telegram", "telegram desktop", "telegram mac",
                                                 "media cache", "медиа", "telegram cache"]))
         }
@@ -628,23 +628,68 @@ enum ScanEngine {
             return ([], [ScanNote(category: .telegram,
                                   text: L("Кэш Telegram пуст — чистить нечего", "Telegram cache is empty — nothing to clean"))])
         }
+        if running {
+            return (items, [ScanNote(category: .telegram,
+                                     text: L("Telegram запущена — закройте её перед очисткой, иначе часть файлов может быть занята",
+                                            "Telegram is running — quit it before cleaning, otherwise some files may be in use"))])
+        }
         return (items, [])
     }
 
-    static func scanWhatsapp() -> ([CleanupItem], [ScanNote]) {
-        let caches = [
+    /// Network and network-response caches of the app container.
+    static func whatsappCachePaths() -> [URL] {
+        [
             home.appendingPathComponent("Library/Containers/net.whatsapp.WhatsApp/Data/Library/Caches"),
             home.appendingPathComponent("Library/Caches/net.whatsapp.WhatsApp"),
-        ].filter { Disk.exists($0) }
+        ]
+    }
 
-        guard !caches.isEmpty else {
+    /// WhatsApp 26.x keeps downloaded chat media in the shared group container,
+    /// not in the app container: `Message/Media` was 142 MB on this Mac while
+    /// the container cache held 360 KB, so the scanner used to report "nothing
+    /// to clean" for an app with a real media cache. Deleting it only removes
+    /// downloaded copies; messages stay and media re-downloads when a chat is
+    /// opened.
+    static func whatsappMediaPaths() -> [URL] {
+        [
+            home.appendingPathComponent("Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media"),
+        ]
+    }
+
+    static func scanWhatsapp() -> ([CleanupItem], [ScanNote]) {
+        let caches = whatsappCachePaths().filter { Disk.exists($0) }
+        let media = whatsappMediaPaths().filter { Disk.exists($0) }
+
+        guard !caches.isEmpty || !media.isEmpty else {
             return ([], [ScanNote(category: .whatsapp,
                                   text: L("WhatsApp не найден или кэш пуст", "WhatsApp not found or its cache is empty"))])
         }
-        if processRunning("WhatsApp") {
+        // The rows are shown even while the app runs — "not detected" was the
+        // worse answer — but each row carries the quit-the-app warning and a
+        // note explains that some files may be locked.
+        let running = processRunning("WhatsApp")
+        let items = whatsappItems(caches: caches, media: media, running: running)
+        if items.isEmpty {
+            // The cache exists but is empty: say so, otherwise a search for
+            // this tool looks like the app does not know about it at all.
             return ([], [ScanNote(category: .whatsapp,
-                                  text: L("WhatsApp запущен — закройте его, чтобы очистить кэш", "WhatsApp is running — quit it to clean the cache"))])
+                                  text: L("Кэш WhatsApp пуст — чистить нечего", "WhatsApp cache is empty — nothing to clean"))])
         }
+        if running {
+            return (items, [ScanNote(category: .whatsapp,
+                                     text: L("WhatsApp запущен — закройте его перед очисткой, иначе часть файлов может быть занята",
+                                            "WhatsApp is running — quit it before cleaning, otherwise some files may be in use"))])
+        }
+        return (items, [])
+    }
+
+    /// Rows for the WhatsApp scanner, separated from the running-app check and
+    /// the disk walk so `--self-test` can assert the media row exists without
+    /// asking the user to quit WhatsApp.
+    static func whatsappItems(caches: [URL], media: [URL], running: Bool = false) -> [CleanupItem] {
+        let runningHint = running
+            ? L(" • WhatsApp запущен: закройте его перед очисткой", " • WhatsApp is running: quit it before cleaning")
+            : ""
         var items: [CleanupItem] = []
         for url in caches {
             let size = Disk.sizeOnDisk(url)
@@ -654,17 +699,24 @@ enum ScanEngine {
                                      detail: url.path,
                                      sizeBytes: size,
                                      action: .remove(url),
-                                     warning: L("MediaCache перекачается из чатов; сообщения не удаляются", "MediaCache re-downloads from chats; messages are not deleted"),
+                                     warning: L("MediaCache перекачается из чатов; сообщения не удаляются", "MediaCache re-downloads from chats; messages are not deleted") + runningHint,
                                      keywords: ["whatsapp", "whatsapp web", "whatsapp desktop",
                                                 "media cache", "whatsapp cache"]))
         }
-        if items.isEmpty {
-            // The cache exists but is empty: say so, otherwise a search for
-            // this tool looks like the app does not know about it at all.
-            return ([], [ScanNote(category: .whatsapp,
-                                  text: L("Кэш WhatsApp пуст — чистить нечего", "WhatsApp cache is empty — nothing to clean"))])
+        for url in media {
+            let size = Disk.sizeOnDisk(url)
+            guard size > 0 else { continue }
+            items.append(CleanupItem(category: .whatsapp,
+                                     title: L("Медиа WhatsApp: фото и видео", "WhatsApp media: photos and videos"),
+                                     detail: url.path,
+                                     sizeBytes: size,
+                                     action: .remove(url),
+                                     warning: L("Загруженные фото/видео скачаются снова при открытии чата; сообщения не удаляются",
+                                                "Downloaded photos/videos re-download when you open a chat; messages are not deleted") + runningHint,
+                                     keywords: ["whatsapp", "media", "фото", "видео", "photos", "videos",
+                                                "media cache", "whatsapp media"]))
         }
-        return (items, [])
+        return items
     }
 
     // MARK: - /private/tmp

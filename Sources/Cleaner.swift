@@ -40,6 +40,10 @@ enum Cleaner {
             home.appendingPathComponent("Library/Caches/ru.keepcoder.Telegram"),
             home.appendingPathComponent("Library/Containers/ru.keepcoder.Telegram.TelegramShare/Data/Library/Caches"),
             home.appendingPathComponent("Library/Containers/net.whatsapp.WhatsApp/Data/Library/Caches"),
+            // WhatsApp 26.x downloaded media lives in the shared group
+            // container; only Message/Media is open, never the container root
+            // (that holds the message database).
+            home.appendingPathComponent("Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media"),
             // pnpm stores are versioned directories; the scanner removes stale
             // versions (not the one `pnpm store path` reports).
             home.appendingPathComponent("Library/pnpm/store"),
