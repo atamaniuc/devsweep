@@ -122,3 +122,9 @@ ARCHS="$(uname -m)" ./build.sh      # host slice only, for quick iteration
 - Scanner notes are user-visible search results (the empty-state shows them). A cache directory that exists but is empty must emit "cache is empty — nothing to clean" instead of silence, otherwise a typed tool name looks unsupported.
 - Fuzzy search worked for `whatsup` (shared `what` prefix against the title word), but with the false-positive note present it matched only the note; proof of the fix is in `--scan`: `note whatsapp: WhatsApp cache is empty — nothing to clean` with WhatsApp closed.
 - Self-test now asserts scan/process consistency: a "running" note exists iff `pgrep -x` finds the app, plus a "whatsup" → WhatsApp scanner/note lookup.
+
+## 1.6.2 (2026-11-17): WhatsApp media lives in the group container
+
+- WhatsApp 26.x (bundle id `net.whatsapp.WhatsApp`) keeps downloaded chat media in `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media` (149 MB on this Mac) — the per-app container `Data/Library/Caches` held only 360 KB. Scanning only the container is why WhatsApp looked "not detected". Scan that Message/Media path as an advanced row; allowlist exactly that path, never the shared container root (message DB lives there). Telegram media is already covered via `~/Library/Group Containers/6N38VWS5BX.ru.keepcoder.Telegram/account-*/postbox/media`.
+- Messenger scanners should still return rows while the app runs (with a "quit before cleaning" warning + note) instead of returning only a note: hiding rows made an installed app look unsupported. `--scan` is the quick proof: it printed `whatsapp 149114880 WhatsApp media: photos and videos` with WhatsApp open.
+- Keep `whatsappItems(caches:media:running:)` pure so self-test can assert the media row and allowlist without the user closing the app.
