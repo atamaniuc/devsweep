@@ -25,6 +25,12 @@ struct DevSweepApp: App {
             let outPath = CommandLine.arguments.count > index + 1 ? CommandLine.arguments[index + 1] : nil
             SelfTest.runPreview(outPath: outPath)
         }
+        // Headless low-disk check run by the background launch agent: one
+        // decision line, and when the criterion holds it opens the app and
+        // exits. Never reached by the `--self-test` path above.
+        if CommandLine.arguments.contains("--disk-check") {
+            DiskAlertMonitor.runHeadlessCheckAndExit()
+        }
         // Watches free space while the app runs; a no-op unless the low-disk
         // alert is enabled in Settings.
         DiskAlertMonitor.start()
