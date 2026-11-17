@@ -351,6 +351,65 @@ enum SelfTest {
         expect(terraformMatches.contains { $0.titleEn.lowercased().contains("terraform") },
                "catalog search finds supported tools that are not installed (terraform)")
 
+        // Baseline checks for the 1.6.0 foundation (sorting, chips, presets).
+        // Each feature stream adds its deeper checks next to its code below.
+        let sortProbes = [
+            CleanupItem(category: .devtools, title: "beta", detail: "",
+                        sizeBytes: 30, action: .remove(URL(fileURLWithPath: "/private/tmp/probe-b"))),
+            CleanupItem(category: .devtools, title: "alpha", detail: "",
+                        sizeBytes: 10, action: .remove(URL(fileURLWithPath: "/private/tmp/probe-a"))),
+            CleanupItem(category: .devtools, title: "gamma", detail: "",
+                        sizeBytes: 20, action: .remove(URL(fileURLWithPath: "/private/tmp/probe-c"))),
+        ]
+        expect(SortState(key: .size, direction: .descending).items(sortProbes).map(\.title)
+               == ["beta", "gamma", "alpha"], "sort by size descending")
+        expect(SortState(key: .size, direction: .ascending).items(sortProbes).map(\.title)
+               == ["alpha", "gamma", "beta"], "sort by size ascending")
+        expect(SortState(key: .name, direction: .ascending).items(sortProbes).map(\.title)
+               == ["alpha", "beta", "gamma"], "sort by name ascending")
+        expect(SortState(key: .name, direction: .descending).items(sortProbes).map(\.title)
+               == ["gamma", "beta", "alpha"], "sort by name descending")
+        var sortToggle = SortState(key: .size, direction: .descending)
+        sortToggle.select(.name)
+        expect(sortToggle == SortState(key: .name, direction: .ascending),
+               "picking Name switches to A→Z")
+        sortToggle.select(.name)
+        expect(sortToggle.direction == .descending, "clicking the active key flips the direction")
+
+        let otherProbe = CleanupItem(category: .telegram, title: "Telegram media cache", detail: "",
+                                     sizeBytes: 0, action: .remove(URL(fileURLWithPath: "/private/tmp/probe-t")))
+        let webProbe = CleanupItem(category: .devtools, title: "web cache", detail: "",
+                                   sizeBytes: 0, action: .remove(URL(fileURLWithPath: "/private/tmp/probe-w")),
+                                   platform: .web)
+        expect(otherProbe.platformTag == .other, "scanner rows fall into the Other chip")
+        expect(webProbe.platformTag == .web, "web rows map to the Web chip")
+        expect(PlatformTag.allCases.count == 8, "chip row has seven disciplines plus Other")
+        let tagStats = PlatformFilter.stats([otherProbe, webProbe])
+        expect(tagStats[.other]?.count == 1 && tagStats[.web]?.count == 1, "chip counts match rows")
+        expect(PlatformFilter.apply([otherProbe, webProbe], tags: [.other]).map(\.id) == [otherProbe.id],
+               "chip filter keeps only its own group")
+        expect(PlatformFilter.apply([otherProbe, webProbe], tags: []).count == 2,
+               "no chip selected keeps every row")
+
+        let presetProbe = SettingsPreset(name: "probe", tags: ["web", "cloud"],
+                                         showAdvanced: false, dryRun: true,
+                                         sortKey: "name", sortDirection: "ascending",
+                                         searchQuery: "pip")
+        do {
+            let data = try JSONEncoder().encode(presetProbe)
+            let decoded = try JSONDecoder().decode(SettingsPreset.self, from: data)
+            expect(decoded == presetProbe, "presets round-trip through JSON")
+        } catch {
+            expect(false, "presets round-trip through JSON")
+        }
+
+        // Feature-stream checks: each stream appends its own list next to the
+        // code it covers, so the release gate runs them all.
+        for (label, ok) in SortChecks.all() { expect(ok, label) }
+        for (label, ok) in FilterChecks.all() { expect(ok, label) }
+        for (label, ok) in SearchChecks.all() { expect(ok, label) }
+        for (label, ok) in SettingsChecks.all() { expect(ok, label) }
+
         // Documentation must not drift from the catalog: the README table is
         // generated from the same specs and compared verbatim.
         if let root = repositoryRoot() {

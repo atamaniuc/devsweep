@@ -152,6 +152,67 @@ enum ToolPlatform: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// The clickable chip row in the main window: the seven catalog disciplines
+/// plus "Other" for rows that have no discipline (package managers, Docker,
+/// Telegram and the other dedicated scanners). Every found row belongs to
+/// exactly one chip, so the chips can filter without losing rows.
+enum PlatformTag: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case web
+    case mobile
+    case desktop
+    case embedded
+    case cloud
+    case web3
+    case dataML
+    case other
+
+    var id: String { rawValue }
+
+    var toolPlatform: ToolPlatform? {
+        switch self {
+        case .web: return .web
+        case .mobile: return .mobile
+        case .desktop: return .desktop
+        case .embedded: return .embedded
+        case .cloud: return .cloud
+        case .web3: return .web3
+        case .dataML: return .other
+        case .other: return nil
+        }
+    }
+
+    var title: String {
+        toolPlatform?.title ?? L("Другое (система и приложения)", "Other (system and apps)")
+    }
+
+    var chipTitle: String {
+        toolPlatform?.chipTitle ?? L("Другое", "Other")
+    }
+
+    var systemImage: String {
+        toolPlatform?.systemImage ?? "shippingbox"
+    }
+
+    /// "Data/ML" is stored as `ToolPlatform.other` in the catalog for backwards
+    /// compatibility with the generated README; the chip names it properly.
+    static func tag(for platform: ToolPlatform?) -> PlatformTag {
+        switch platform {
+        case .some(.web): return .web
+        case .some(.mobile): return .mobile
+        case .some(.desktop): return .desktop
+        case .some(.embedded): return .embedded
+        case .some(.cloud): return .cloud
+        case .some(.web3): return .web3
+        case .some(.other): return .dataML
+        case .none: return .other
+        }
+    }
+}
+
+extension CleanupItem {
+    var platformTag: PlatformTag { PlatformTag.tag(for: platform) }
+}
+
 enum CleanupAction: Sendable {
     case remove(URL)
     case command(String)
@@ -547,6 +608,10 @@ extension CleanupItem {
         if let warning {
             parts.append(warning)
         }
+        // The chip a row lives under is searchable too: "other" and "data" find
+        // rows whose tool name says nothing about their discipline.
+        parts.append(platformTag.chipTitle)
+        parts.append(platformTag.title)
         parts.append(contentsOf: keywords)
         return parts.joined(separator: " ")
     }

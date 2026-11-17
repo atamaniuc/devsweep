@@ -25,6 +25,9 @@ struct DevSweepApp: App {
             let outPath = CommandLine.arguments.count > index + 1 ? CommandLine.arguments[index + 1] : nil
             SelfTest.runPreview(outPath: outPath)
         }
+        // Watches free space while the app runs; a no-op unless the low-disk
+        // alert is enabled in Settings.
+        DiskAlertMonitor.start()
     }
 
     var body: some Scene {
@@ -33,5 +36,9 @@ struct DevSweepApp: App {
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1040, height: 860)
+
+        Settings {
+            SettingsView(settings: SettingsStore.shared, model: AppModel.shared)
+        }
     }
 }

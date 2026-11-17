@@ -22,7 +22,7 @@ extension BrandColor {
 }
 
 struct ContentView: View {
-    @StateObject private var model = AppModel()
+    @StateObject private var model = AppModel.shared
     @State private var showConfirm = false
     @FocusState private var searchFocused: Bool
 
@@ -138,21 +138,22 @@ struct ContentView: View {
                 Text(L("· найдено \(model.items.count) здесь", "· \(model.items.count) found here"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(model.items.isEmpty ? Color.secondary : Color.accentColor)
-                Text("·")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-                ForEach(ToolPlatform.allCases) { platform in
-                    Text("\(platform.chipTitle) \(ToolCaches.specs(for: platform).count)")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.secondary.opacity(0.13)))
-                        .fixedSize()
-                        .lineLimit(1)
+                if model.hasActiveFilters {
+                    Button {
+                        model.clearTagFilter()
+                        model.searchQuery = ""
+                    } label: {
+                        Text(L("сбросить фильтры", "clear filters"))
+                            .font(.system(size: 11.5, weight: .medium))
+                    }
+                    .buttonStyle(.link)
                 }
+                Spacer()
             }
             .fixedSize(horizontal: false, vertical: true)
+
+            // Clickable discipline chips: they are filters, not labels.
+            PlatformFilterBar(model: model)
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
@@ -226,6 +227,15 @@ struct ContentView: View {
                 .tint(.red)
                 .disabled(!model.canClean)
             }
+
+            Button {
+                SettingsOpener.open()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .buttonStyle(.bordered)
+            .help(L("Настройки: алерты о свободном месте и пресеты (⌘,)", "Settings: low-disk alerts and presets (⌘,)"))
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 11)
@@ -275,6 +285,10 @@ struct ContentView: View {
 
             Spacer()
 
+            // Asc/desc by size or name; the same control is repeated inside the
+            // dry-run sheet, where it sorts the targets and their file lists.
+            SortControl(model: model)
+
             Button(L("Поиск", "Search")) { searchFocused = true }
                 .keyboardShortcut("f", modifiers: .command)
                 .opacity(0)
@@ -307,7 +321,7 @@ struct ContentView: View {
                         sectionHeader(L("Расширенные", "Advanced"), L("прочитайте предупреждения: это данные, которые восстанавливаются не всегда", "read the warnings: this data is not always recreated"))
                         groupedRows(model.visibleAdvancedItems)
                     }
-                    if model.isFiltering && model.visibleItems.isEmpty && !model.items.isEmpty {
+                    if model.hasActiveFilters && model.visibleItems.isEmpty && !model.items.isEmpty {
                         noMatchState
                     }
                     if model.phase == .idle && model.items.isEmpty {
@@ -341,45 +355,42 @@ struct ContentView: View {
         }
     }
 
-    /// Toolchain rows are grouped by discipline (web, mobile, desktop,
-    /// embedded, data/ML/cloud): that grouping is the product difference from
-    /// a generic "empty the Trash" cleaner.
+    /// Toolchain rows are grouped by discipline: that grouping is the product
+    /// difference from a generic "empty the Trash" cleaner. The group order and
+    /// the row order inside it both follow the current sort, because AppModel
+    /// hands over an already sorted list.
     @ViewBuilder
     private func groupedRows(_ items: [CleanupItem]) -> some View {
-        ForEach(ToolPlatform.allCases) { platform in
-            let group = items.filter { $0.platform == platform }
-            if !group.isEmpty {
-                platformHeader(platform, group)
-                itemRows(group)
-            }
-        }
-        let rest = items.filter { $0.platform == nil }
-        if !rest.isEmpty {
-            if items.contains(where: { $0.platform != nil }) {
-                sectionHeader(L("Система и приложения", "System and apps"),
-                              L("менеджеры пакетов, IDE, Docker, временные файлы",
-                                "package managers, IDEs, Docker, temporary files"))
-            }
-            itemRows(rest)
+        ForEach(model.groups(for: items)) { group in
+            platformHeader(group)
+            itemRows(group.items)
         }
     }
 
-    private func platformHeader(_ platform: ToolPlatform, _ items: [CleanupItem]) -> some View {
-        let size = items.reduce(Int64(0)) { $0 + $1.sizeBytes }
-        return HStack(spacing: 9) {
-            Image(systemName: platform.systemImage)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 18)
-            Text(platform.title)
-                .font(.system(size: 14.5, weight: .semibold))
-            Text("\(items.count) · \(humanBytes(size))")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color.secondary.opacity(0.1)))
-            Spacer()
+    private func platformHeader(_ group: AppModel.ItemGroup) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 9) {
+                Image(systemName: group.tag.systemImage)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 18)
+                Text(group.tag.title)
+                    .font(.system(size: 14.5, weight: .semibold))
+                Text("\(group.items.count) · \(humanBytes(group.bytes))")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.secondary.opacity(0.1)))
+                Spacer()
+            }
+            if group.tag == .other {
+                Text(L("менеджеры пакетов, IDE, Docker, мессенджеры, временные файлы",
+                       "package managers, IDEs, Docker, messengers, temporary files"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 27)
+            }
         }
         .padding(.top, 8)
     }
@@ -408,7 +419,7 @@ struct ContentView: View {
 
     private var notesView: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(model.notes) { note in
+            ForEach(model.visibleNotes) { note in
                 Label("\(note.category.title): \(note.text)", systemImage: "info.circle")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
@@ -443,11 +454,40 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             Text(L("Ничего не найдено", "Nothing matches"))
                 .font(.system(size: 16, weight: .semibold))
-            Text(L("По запросу «\(model.trimmedQuery)» строк нет. Попробуйте название инструмента (gradle, pip, foundry) или группу (web3, mobile).",
-                   "No rows match “\(model.trimmedQuery)”. Try a tool name (gradle, pip, foundry) or a group (web3, mobile)."))
+            Text(noMatchMessage)
                 .font(.system(size: 13.5))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            if !model.matchingNotes.isEmpty {
+                VStack(spacing: 4) {
+                    Text(L("Что говорит сканирование:", "What the scan says:"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    ForEach(model.matchingNotes) { note in
+                        Text("\(note.category.title): \(note.text)")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(.top, 6)
+                .padding(.horizontal, 24)
+            }
+            if !model.scannerMatches.isEmpty {
+                VStack(spacing: 3) {
+                    Text(L("Обслуживается отдельным сканером (строка появится, если кэш найден):",
+                           "Cleaned by a dedicated scanner (a row appears when the cache exists):"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text(model.scannerMatches.prefix(8).map(\.titleEn).joined(separator: " · "))
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 6)
+                .padding(.horizontal, 24)
+            }
             if !model.catalogMatches.isEmpty {
                 VStack(spacing: 3) {
                     Text(L("Поддерживается, но кэша на этом Mac нет:",
@@ -463,14 +503,37 @@ struct ContentView: View {
                 .padding(.top, 6)
                 .padding(.horizontal, 24)
             }
-            Button(L("Очистить поиск", "Clear the search")) {
-                model.searchQuery = ""
+            HStack(spacing: 14) {
+                if model.isFiltering {
+                    Button(L("Очистить поиск", "Clear the search")) {
+                        model.searchQuery = ""
+                    }
+                }
+                if !model.selectedTags.isEmpty {
+                    Button(L("Сбросить фильтр по группам", "Clear the group filter")) {
+                        model.clearTagFilter()
+                    }
+                }
             }
             .font(.system(size: 13.5))
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
+    }
+
+    private var noMatchMessage: String {
+        let tags = model.selectedTags.map(\.chipTitle).joined(separator: ", ")
+        if model.isFiltering && !tags.isEmpty {
+            return L("По запросу «\(model.trimmedQuery)» в группах \(tags) строк нет. Попробуйте название инструмента (gradle, pip, foundry) или другую группу.",
+                     "No rows match “\(model.trimmedQuery)” in \(tags). Try a tool name (gradle, pip, foundry) or another group.")
+        }
+        if !tags.isEmpty {
+            return L("В группах \(tags) сейчас нет строк. Снимите чип или измените поиск.",
+                     "There are no rows in \(tags) right now. Clear the chip or change the search.")
+        }
+        return L("По запросу «\(model.trimmedQuery)» строк нет. Попробуйте название инструмента (gradle, pip, foundry) или группу (web3, mobile).",
+                 "No rows match “\(model.trimmedQuery)”. Try a tool name (gradle, pip, foundry) or a group (web3, mobile).")
     }
 
     private func sectionHeader(_ title: String, _ subtitle: String) -> some View {
@@ -697,262 +760,3 @@ private struct ItemRow: View {
 }
 
 
-struct PreviewSheet: View {
-    let report: PreviewReport
-    let onClose: () -> Void
-
-    @State private var savedPath: String?
-    @State private var saving = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "eye.circle.fill")
-                    .font(.system(size: 26))
-                    .foregroundStyle(.blue)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L("Что будет удалено", "What will be deleted"))
-                        .font(.system(size: 20, weight: .bold))
-                    Text(L("Dry run: ничего не удалено. Ниже — точный список файлов и команд.", "Dry run: nothing was deleted. Below is the exact list of files and commands."))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(humanBytes(report.totalBytes))
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-            }
-
-            HStack(spacing: 18) {
-                Label(L("\(report.targetCount) items", "\(report.targetCount) items") + "", systemImage: "square.stack.3d.up")
-                if report.fileCount > 0 {
-                    Label(L("\(report.fileCount) файлов", "\(report.fileCount) files"), systemImage: "doc.on.doc")
-                } else {
-                    Label(L("файлы считаются при раскрытии строки",
-                            "file lists are counted when a row is expanded"),
-                          systemImage: "clock.arrow.circlepath")
-                }
-                Spacer()
-            }
-            .font(.system(size: 12.5))
-            .foregroundStyle(.secondary)
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(report.targets) { target in
-                        PreviewTargetRow(target: target)
-                    }
-                }
-                .padding(2)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            HStack(spacing: 10) {
-                if let savedPath {
-                    Text(L("Сохранено: \(savedPath)", "Saved: \(savedPath)"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer()
-                if saving {
-                    ProgressView().controlSize(.small)
-                    Text(L("считаю полный список…", "counting every file…"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                Button(L("Сохранить отчёт…", "Save report…")) { saveReport() }
-                    .disabled(saving)
-                Button(L("Закрыть", "Close")) { onClose() }
-                    .keyboardShortcut(.cancelAction)
-            }
-        }
-        .padding(20)
-        .frame(width: 780, height: 580)
-    }
-
-    /// The saved report needs the full file lists, so the walk happens here,
-    /// after the user explicitly asked for the file. The sheet stays usable and
-    /// shows a spinner meanwhile.
-    private func saveReport() {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "devsweep-dry-run.txt"
-        panel.allowedContentTypes = [.plainText]
-        panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let items = report.targets.compactMap(\.item)
-        saving = true
-        savedPath = nil
-        Task { @MainActor in
-            let full = await Task.detached(priority: .userInitiated) {
-                PreviewBuilder.build(items: items)
-            }.value
-            do {
-                try full.textReport.write(to: url, atomically: true, encoding: .utf8)
-                savedPath = url.path
-            } catch {
-                savedPath = L("ошибка записи: \(error.localizedDescription)", "write error: \(error.localizedDescription)")
-            }
-            saving = false
-        }
-    }
-}
-
-/// One target in the dry-run report. The plan arrives with sizes only; the
-/// file list is walked the first time the row is opened, in pages. That keeps
-/// "Show plan" instant even when the selection holds hundreds of thousands of
-/// files, instead of freezing while every list is built up front.
-private struct PreviewTargetRow: View {
-    let target: PreviewTarget
-
-    @State private var expanded = false
-    @State private var scanning = false
-    @State private var scannedFiles: [PreviewFile] = []
-    @State private var scannedCount = 0
-    @State private var scannedSize: Int64 = 0
-    @State private var visibleLimit = 100
-
-    private let pageSize = 200
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                toggle()
-            } label: {
-                header
-            }
-            .buttonStyle(.plain)
-
-            if expanded {
-                content
-            }
-        }
-        .padding(11)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.07)))
-    }
-
-    private var effectiveCount: Int {
-        scannedCount > 0 ? scannedCount : target.fileCount
-    }
-
-    private var effectiveSize: Int64 {
-        scannedSize > 0 ? scannedSize : target.sizeBytes
-    }
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 12)
-                .padding(.top, 3)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(target.category) · \(target.title)")
-                    .font(.system(size: 13, weight: .semibold))
-                Text(target.path ?? (target.command ?? ""))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(humanBytes(effectiveSize))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                if scanning {
-                    Text(L("считаю файлы…", "counting files…"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                } else if effectiveCount > 0 {
-                    Text(L("\(effectiveCount) файлов", "\(effectiveCount) files"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(minWidth: 96, alignment: .trailing)
-        }
-        .contentShape(Rectangle())
-    }
-
-    private func toggle() {
-        expanded.toggle()
-        guard expanded, !scanning, scannedCount == 0, scannedFiles.isEmpty,
-              target.command == nil else { return }
-        scanning = true
-        let snapshot = target
-        Task { @MainActor in
-            let result = await Task.detached(priority: .userInitiated) {
-                PreviewBuilder.scanFiles(for: snapshot)
-            }.value
-            scannedFiles = result.files
-            scannedCount = result.count
-            scannedSize = result.size
-            scanning = false
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let command = target.command {
-            Text(L("Команда: \(command)", "Command: \(command)"))
-                .font(.system(size: 12, design: .monospaced))
-                .textSelection(.enabled)
-            Text(L("Точный список определяет сам инструмент; для него dry-run недоступен.", "The tool itself decides the exact list; no dry run is available for it."))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-        } else if scanning {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text(L("Считаю файлы в этом кэше…", "Counting the files in this cache…"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 4)
-        } else if scannedFiles.isEmpty {
-            Text(L("Пустой каталог: удалять нечего", "Empty directory: nothing to delete"))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-        } else {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(scannedFiles.prefix(visibleLimit)) { file in
-                    HStack(spacing: 8) {
-                        Text(file.path)
-                            .font(.system(size: 11, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                        Spacer()
-                        Text(humanBytes(file.sizeBytes))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            if visibleLimit < scannedFiles.count {
-                HStack(spacing: 12) {
-                    Button(L("Показать ещё \(min(pageSize, scannedFiles.count - visibleLimit))",
-                             "Show \(min(pageSize, scannedFiles.count - visibleLimit)) more")) {
-                        visibleLimit = min(scannedFiles.count, visibleLimit + pageSize)
-                    }
-                    .font(.system(size: 12))
-                    Button(L("Показать первые \(min(2000, scannedFiles.count))",
-                             "Show the first \(min(2000, scannedFiles.count))")) {
-                        visibleLimit = min(2000, scannedFiles.count)
-                    }
-                    .font(.system(size: 12))
-                    .disabled(visibleLimit >= min(2000, scannedFiles.count))
-                    Text(L("… и ещё \(scannedFiles.count - visibleLimit) файлов — полный список сохраняется в отчёт",
-                           "… and \(scannedFiles.count - visibleLimit) more files — the full list goes into the saved report"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 4)
-            }
-        }
-    }
-}
