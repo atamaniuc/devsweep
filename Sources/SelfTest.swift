@@ -61,6 +61,34 @@ enum SelfTest {
         expect(!Cleaner.isAllowed(URL(fileURLWithPath: "/private/tmp/other")), "refuse other tmp entry")
         expect(!Cleaner.isAllowed(URL(fileURLWithPath: "/private/tmp/claude-abc/def")), "refuse nested tmp entry")
 
+        // A closed app must not be reported as running. WhatsApp keeps a
+        // ServiceExtension whose command line contains its .app path, so a
+        // full-command-line `pgrep -f` match claimed the app was running (and
+        // skipped its cache) after the user quit it. The scanner now uses an
+        // exact process-name match; this checks the notes agree with reality.
+        for (app, category) in [("Telegram", CleanupCategory.telegram),
+                                ("WhatsApp", CleanupCategory.whatsapp)] {
+            let running = ScanEngine.processRunning(app)
+            let note = result.notes.first { $0.category == category }
+            print("process \(app): running=\(running) note=\(note?.text ?? "none")")
+            if !running {
+                expect(note?.text.localizedCaseInsensitiveContains("running") != true,
+                       "\(app) is closed, so no \"running\" note is emitted")
+            }
+            if running {
+                expect(note?.text.localizedCaseInsensitiveContains("running") == true,
+                       "\(app) is running, so its cache is skipped with a note")
+            }
+        }
+
+        // Fuzzy search: a typo for a scanner-managed tool must resolve to it.
+        expect(SearchIndex.scannerMatches("whatsup").contains { $0.titleEn == "WhatsApp" },
+               "searching 'whatsup' resolves to WhatsApp")
+        let whatsappProbeNote = [ScanNote(category: .whatsapp,
+                                          text: "WhatsApp is running — quit it to clean the cache")]
+        expect(!SearchIndex.matchingNotes(whatsappProbeNote, query: "whatsup").isEmpty,
+               "searching 'whatsup' finds the WhatsApp note")
+
         // The cache of the installed IDE must never be proposed for deletion.
         let installed = ScanEngine.installedIntelliJVersions()
         print("installed IntelliJ: \(installed.joined(separator: ", "))")

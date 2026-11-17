@@ -175,8 +175,13 @@ enum ScanEngine {
         Shell.login("command -v \(name)").status == 0
     }
 
-    static func processRunning(_ pattern: String) -> Bool {
-        Shell.run("/usr/bin/pgrep", ["-f", pattern]).status == 0
+    /// Exact executable match, not `pgrep -f`: WhatsApp keeps a background
+    /// ServiceExtension at `/Applications/WhatsApp.app/Contents/PlugIns/...`
+    /// whose command line contains "WhatsApp.app", so a full-command-line match
+    /// claimed the app was running (and skipped its cache) even after the user
+    /// quit it. `pgrep -x` compares the process name ("WhatsApp") only.
+    static func processRunning(_ executable: String) -> Bool {
+        Shell.run("/usr/bin/pgrep", ["-x", executable]).status == 0
     }
 
     static func run() -> ScanResult {
@@ -600,7 +605,7 @@ enum ScanEngine {
             return ([], [ScanNote(category: .telegram,
                                   text: L("Telegram не найден или кэш пуст", "Telegram not found or its cache is empty"))])
         }
-        if processRunning("Telegram.app") {
+        if processRunning("Telegram") {
             return ([], [ScanNote(category: .telegram,
                                   text: L("Telegram запущена — закройте её, чтобы очистить медиа-кэш", "Telegram is running — quit it to clean the media cache"))])
         }
@@ -617,6 +622,12 @@ enum ScanEngine {
                                      keywords: ["telegram", "telegram desktop", "telegram mac",
                                                 "media cache", "медиа", "telegram cache"]))
         }
+        if items.isEmpty {
+            // The cache exists but is empty: say so, otherwise a search for
+            // this tool looks like the app does not know about it at all.
+            return ([], [ScanNote(category: .telegram,
+                                  text: L("Кэш Telegram пуст — чистить нечего", "Telegram cache is empty — nothing to clean"))])
+        }
         return (items, [])
     }
 
@@ -630,7 +641,7 @@ enum ScanEngine {
             return ([], [ScanNote(category: .whatsapp,
                                   text: L("WhatsApp не найден или кэш пуст", "WhatsApp not found or its cache is empty"))])
         }
-        if processRunning("WhatsApp.app") {
+        if processRunning("WhatsApp") {
             return ([], [ScanNote(category: .whatsapp,
                                   text: L("WhatsApp запущен — закройте его, чтобы очистить кэш", "WhatsApp is running — quit it to clean the cache"))])
         }
@@ -646,6 +657,12 @@ enum ScanEngine {
                                      warning: L("MediaCache перекачается из чатов; сообщения не удаляются", "MediaCache re-downloads from chats; messages are not deleted"),
                                      keywords: ["whatsapp", "whatsapp web", "whatsapp desktop",
                                                 "media cache", "whatsapp cache"]))
+        }
+        if items.isEmpty {
+            // The cache exists but is empty: say so, otherwise a search for
+            // this tool looks like the app does not know about it at all.
+            return ([], [ScanNote(category: .whatsapp,
+                                  text: L("Кэш WhatsApp пуст — чистить нечего", "WhatsApp cache is empty — nothing to clean"))])
         }
         return (items, [])
     }

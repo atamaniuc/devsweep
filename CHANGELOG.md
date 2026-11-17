@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.1 — 2026-11-17
+
+A search for a messenger must not claim the app is running when it is not.
+
+### Fixed
+
+- **"WhatsApp is running" while it was closed.** The scanner used `pgrep -f
+  WhatsApp.app`, which also matched WhatsApp's background ServiceExtension
+  (`/Applications/WhatsApp.app/Contents/PlugIns/ServiceExtension`): the cache
+  was skipped and the note said the app was running even after the user quit
+  it. The check now compares the exact process name (`pgrep -x WhatsApp`), so a
+  closed app exposes its cache and only a really running app is skipped.
+- **Empty caches say so.** When the Telegram/WhatsApp cache directory exists
+  but is empty, the scan now emits a note ("WhatsApp cache is empty — nothing
+  to clean") instead of silence, so searching for the tool explains the state
+  instead of looking like missing support.
+- **`whatsup` resolves to WhatsApp**: the fuzzy fallback matched the title
+  ("WhatsApp cache") via the shared `what` prefix and the scanner list by
+  synonym; self-test now pins both the typo lookup and the "closed app emits no
+  running note" rule.
+
+### Verification
+
+- `--self-test`: 305 PASS, 0 FAIL (adds process/note consistency checks and a
+  fuzzy "whatsup" lookup); `--scan` on this machine now prints
+  `note whatsapp: WhatsApp cache is empty — nothing to clean` with WhatsApp
+  closed, and `note telegram: Telegram is running — …` with Telegram open.
+
 ## 1.6.0 — 2026-11-17
 
 The window becomes a real control panel: sort it, filter it with the discipline
