@@ -108,26 +108,6 @@ final class AppModel: ObservableObject {
 
     var hasAdvancedItems: Bool { items.contains { $0.category.isAdvanced } }
 
-    /// Rows bucketed by chip, in the order their first sorted row appears: with
-    /// "size desc" the biggest group leads, with "name asc" the alphabetically
-    /// first group does. Rows are already sorted, so this is one linear pass.
-    struct ItemGroup: Identifiable {
-        let tag: PlatformTag
-        let items: [CleanupItem]
-        var id: String { tag.rawValue }
-        var bytes: Int64 { items.reduce(Int64(0)) { $0 + $1.sizeBytes } }
-    }
-
-    func groups(for rows: [CleanupItem]) -> [ItemGroup] {
-        var order: [PlatformTag] = []
-        var buckets: [PlatformTag: [CleanupItem]] = [:]
-        for row in rows {
-            let tag = row.platformTag
-            if buckets[tag] == nil { order.append(tag) }
-            buckets[tag, default: []].append(row)
-        }
-        return order.map { ItemGroup(tag: $0, items: buckets[$0] ?? []) }
-    }
 
     /// "found here" numbers for the chips: rows and bytes per discipline.
     var tagStats: [PlatformTag: PlatformFilter.Stats] { PlatformFilter.stats(items) }

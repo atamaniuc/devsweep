@@ -315,11 +315,11 @@ struct ContentView: View {
                     }
                     if !model.visibleSafeItems.isEmpty {
                         sectionHeader(L("Безопасно удалить", "Safe to delete"), L("это кэши: приложение или пакетный менеджер восстановит их сам", "these are caches: the app or package manager recreates them"))
-                        groupedRows(model.visibleSafeItems)
+                        itemRows(model.visibleSafeItems)
                     }
                     if model.showAdvanced && !model.visibleAdvancedItems.isEmpty {
                         sectionHeader(L("Расширенные", "Advanced"), L("прочитайте предупреждения: это данные, которые восстанавливаются не всегда", "read the warnings: this data is not always recreated"))
-                        groupedRows(model.visibleAdvancedItems)
+                        itemRows(model.visibleAdvancedItems)
                     }
                     if model.hasActiveFilters && model.visibleItems.isEmpty && !model.items.isEmpty {
                         noMatchState
@@ -353,46 +353,6 @@ struct ContentView: View {
         ForEach(items) { item in
             ItemRow(item: item, selected: model.binding(for: item.id))
         }
-    }
-
-    /// Toolchain rows are grouped by discipline: that grouping is the product
-    /// difference from a generic "empty the Trash" cleaner. The group order and
-    /// the row order inside it both follow the current sort, because AppModel
-    /// hands over an already sorted list.
-    @ViewBuilder
-    private func groupedRows(_ items: [CleanupItem]) -> some View {
-        ForEach(model.groups(for: items)) { group in
-            platformHeader(group)
-            itemRows(group.items)
-        }
-    }
-
-    private func platformHeader(_ group: AppModel.ItemGroup) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 9) {
-                Image(systemName: group.tag.systemImage)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 18)
-                Text(group.tag.title)
-                    .font(.system(size: 14.5, weight: .semibold))
-                Text("\(group.items.count) · \(humanBytes(group.bytes))")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.secondary.opacity(0.1)))
-                Spacer()
-            }
-            if group.tag == .other {
-                Text(L("менеджеры пакетов, IDE, Docker, мессенджеры, временные файлы",
-                       "package managers, IDEs, Docker, messengers, temporary files"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 27)
-            }
-        }
-        .padding(.top, 8)
     }
 
     private var phaseLabel: String {
